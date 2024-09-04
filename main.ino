@@ -40,7 +40,200 @@ float Kp = 2.0, Ki = 0.5, Kd = 1.0; // Ustawiony Kp na 2.0
 float previousError = 0;
 float integral = 0;
 
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
+#include <Wire.h>
+#include <Adafruit_SH1106.h>
+#include <ArduinoEigen.h>
 
+// Definicje pinów
+const int muxSelectPinA = D2; // Pin A do wyboru multipleksera
+const int muxSelectPinB = D3; // Pin B do wyboru multipleksera
+const int muxInputPin = A0;   // Pin dla odczytu z multipleksera
+const int PIN_EXCITATION_COIL_1 = D0; // Pin PWM dla cewki wzbudzenia 1 
+const int PIN_EXCITATION_COIL_2 = D1; // Pin PWM dla cewki wzbudzenia 2
+
+// Piny do tranzystorów
+const int transistorPins[4] = {D4, D5, D6, D7}; // Piny dla tranzystorów
+
+// Liczba czujników
+const int NUM_SENSORS = 4; // Liczba czujników
+
+// Stałe
+const float VOLTAGE_REFERENCE = 3.3; // Napięcie referencyjne dla przetwornika ADC (w woltach)
+const int ADC_MAX_VALUE = 1023; // Maksymalna wartość odczytu z przetwornika ADC
+float VOLTAGE_SETPOINT = 230.0; // Ustawione napięcie docelowe na 230V
+const float VOLTAGE_REGULATION_HYSTERESIS = 0.1; // Histereza regulacji napięcia (w woltach)
+
+// Parametry PID
+float Kp = 2.0, Ki = 0.5, Kd = 1.0; // Ustawiony Kp na 2.0
+float previousError = 0;
+float integral = 0;
+
+// Zmienne globalne
+float voltageIn[2] = {0}; // Zmienne dla czujników napięcia
+float currentIn[2] = {0}; // Zmienne dla czujników prądu
+
+// Dodanie zmiennych globalnych
+float bestKp = Kp; // Najlepsza wartość Kp
+float bestEfficiency = 0.0; // Najlepsza wydajność
+
+ESP8266WebServer server(80);
+
+// RLS Variables
+float theta[3] = {Kp, Ki, Kd}; // Współczynniki RLS
+float P[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; // Macierz kowariancji
+float lambda = 0.99; // Współczynnik zapomnienia
+
+// Historia danych
+const int HISTORY_SIZE = 100;
+float voltageHistory[HISTORY_SIZE];
+float currentHistory[HISTORY_SIZE];
+int historyIndex = 0;
+
+// Q-learning
+const int NUM_STATES = 10; // Liczba stanów (przedziały błędu napięcia)
+const int NUM_ACTIONS = 5; // Liczba akcji (wartości Kp)
+
+// Funkcja aktualizująca stany tranzystorów
+void updateTransistors(float controlSignal) {
+    // Przekształć sygnał kontrolny na wartości dla tranzystorów
+    int transistorValue = constrain(controlSignal, 0, 255);
+    
+    // Ustawienie stanu dla tranzystorów na podstawie sygnału kontrolnego
+    for (int i = 0; i < 4; i++) {
+        analogWrite(transistorPins[i], transistorValue);
+    }
+}
+
+void setup() {
+    pinMode(muxSelectPinA, OUTPUT);
+    pinMode(muxSelectPinB, OUTPUT);
+    pinMode(PIN_EXCITATION_COIL_1, OUTPUT); 
+    pinMode(PIN_EXCITATION_COIL_2, OUTPUT); 
+
+    server.begin();
+    display.begin();
+    calibrateSensors();
+}
+
+void readSensors() {
+    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+        // Ustawienie multipleksera dla odpowiedniego czujnika
+        digitalWrite(muxSelectPinA, sensor & 0x01); // Ustawienie LSB
+        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); // Ustawienie MSB
+
+        // Odczyt wartości z czujnika i konwersja
+        if (sensor < 2) { // Czujniki prądu ACS712-5A
+            float Vcc = 5.0; // Napięcie zasilania czujnika
+            float Sensitivity = 0.066; // Czułość czujnika w V/A
+            float Vout = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); 
+            currentIn[sensor] = (Vout - (Vcc / 2.0)) / Sensitivity; 
+        } else { // Czujniki napięcia z dzielnikiem 100:1
+            float multiplier = 100.0; // Mnożnik wynikający z dzielnika napięcia
+            voltageIn[sensor - 2] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE) * multiplier; 
+        }
+    }
+}
+
+void controlExcitationCoils(float controlSignal) {
+    // Ograniczenie sygnału kontrolnego do zakresu 0-255
+    int pwmValue = constrain(controlSignal, 0, 255);
+    analogWrite(PIN_EXCITATION_COIL_1, pwmValue); // Użyj analogWrite zamiast analogWrite
+    analogWrite(PIN_EXCITATION_COIL_2, pwmValue); // Użyj analogWrite zamiast analogWrite
+}
+
+void updateLearningAlgorithm(float voltageError) {
+    // Obliczanie stanu na podstawie błędu napięcia
+    int state = (int)(abs(voltageError) / 2);
+    state = constrain(state, 0, NUM_STATES - 1);
+
+    // Uaktualnienie Q-learning
+    float reward = calculateReward(voltageError);
+    updateQ(state, lastAction, reward, state);
+}
+
+void loop() {
+    server.handleClient();
+
+    // Odczyt wartości z czujników za pomocą multipleksera
+    readSensors();
+
+    // Odczyt napięcia i prądu z dodatkowych zewnętrznych czujników
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Logowanie danych
+    logData(); // Funkcja logowania danych
+
+    // Sprawdzenie alarmów
+    checkAlarm(); // Funkcja sprawdzająca alarmy
+
+    // Automatyczna kalibracja
+    autoCalibrate(); // Funkcja automatycznej kalibracji
+
+    // Zarządzanie energią
+    energyManagement(); // Funkcja zarządzania energią
+
+    // Obliczanie wydajności
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+
+    // Monitorowanie wydajności i aktualizacja Kp
+    if (efficiency > bestEfficiency) {
+        bestEfficiency = efficiency;
+        bestKp = Kp;
+    } else {
+        Kp = bestKp; // Przywrócenie do najlepszego Kp
+    }
+
+    // Adaptacja Kp (algorytm adaptacyjny PID)
+    float error = VOLTAGE_SETPOINT - voltageIn[0];
+    if (abs(error) > Kp_change_threshold) { // Zmień Kp, jeśli błąd jest duży
+      Kp += Kp_change_rate * error;
+      Kp = constrain(Kp, Kp_min, Kp_max); // Ogranicz Kp do dozwolonego zakresu
+    }
+
+    // Q-learning
+    // 1. Obliczanie stanu
+    int state = (int)(abs(VOLTAGE_SETPOINT - voltageIn[0]) / 2);
+    state = constrain(state, 0, NUM_STATES - 1); 
+
+    // 2. Wybór akcji (Kp)
+    int action = chooseAction(state);
+    Kp = action * 0.5 + 1.0; // Przypisanie wartości Kp na podstawie akcji
+
+    // Uwzględnienie odczytów z czujników w obliczeniach PID
+    float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+    controlExcitationCoils(pidOutput); // Kontrola cewek wzbudzenia
+
+    // Aktualizacja tranzystorów
+    updateTransistors(pidOutput); // Dodaj tę linię
+
+    // 4. Obliczenie nagrody
+    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
+
+    // 5. Aktualizacja Q-learning
+    updateQ(state, lastAction, reward, state); 
+
+    // Opóźnienie 100ms
+    delay(100);
+
+    // Aktualizacja algorytmu uczenia maszynowego
+    updateLearningAlgorithm(VOLTAGE_SETPOINT - voltageIn[0]);
+
+    // Wyświetlanie danych na OLED
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("Napięcie: ");
+    display.print(voltageIn[0]);
+    display.println(" V");
+    display.print("Prąd: ");
+    display.print(currentIn[0]);
+    display.println(" A");
+    display.display(); // Wyświetl dane
+}
 
 // Zmienne globalne
 float voltageIn[2] = {0}; // Zmienne dla czujników napięcia
