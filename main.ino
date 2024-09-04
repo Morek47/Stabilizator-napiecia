@@ -6,7 +6,46 @@
 #include <Adafruit_SH1106.h>
 #include <ArduinoEigen.h>
 
+#include <Arduino.h>  // Ensure required header is included
 
+// Definicje pinów dla tranzystorów
+const int transistorPin1 = D4;
+const int transistorPin2 = D5;
+const int transistorPin3 = D6;
+const int transistorPin4 = D7;
+
+// Stałe konfiguracyjne
+const float LOAD_THRESHOLD = 0.5; // Example threshold, adjust as needed
+const float COMPENSATION_FACTOR = 0.1; // Example factor, adjust as needed
+const int MAX_EXCITATION_CURRENT = 255; // Example max current, adjust as needed
+
+void loop() {
+    // ... (pozostała część kodu)
+
+    // Odczyt wartości z czujników
+    readSensors();
+    float generatorLoad = analogRead(A3); // Example sensor read, adjust as needed
+
+    // Inteligentne sterowanie cewką wzbudzenia
+    // ... (implementacja algorytmu uczenia maszynowego)
+
+    // Uwzględnij obciążenie prądnicy w algorytmie
+    float excitationCurrent = 0; // Initialize excitation current
+    if (generatorLoad > LOAD_THRESHOLD) {
+        excitationCurrent = constrain(excitationCurrent + COMPENSATION_FACTOR * generatorLoad, 0, MAX_EXCITATION_CURRENT);
+    }
+
+    // Sterowanie 4 tranzystorami za pomocą PWM
+    int pwmValue = map(excitationCurrent, 0, MAX_EXCITATION_CURRENT, 0, 255);
+
+    // Ustaw wartość PWM na wszystkich pinach tranzystorów
+    analogWrite(transistorPin1, pwmValue);
+    analogWrite(transistorPin2, pwmValue);
+    analogWrite(transistorPin3, pwmValue);
+    analogWrite(transistorPin4, pwmValue);
+
+    // ... (pozostała część kodu)
+}
 
 // Definicje pinów
 const int muxSelectPinA = D2; // Pin A do wyboru multipleksera
