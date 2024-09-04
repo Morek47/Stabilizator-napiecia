@@ -55,7 +55,7 @@ void controlTransistors(float voltage) {
     analogWrite(transistorPin4, pwm4);
 }
 
-// ... (reszta twojego kodu)
+// 
 
 // Stałe konfiguracyjne
 const float LOAD_THRESHOLD = 0.5;
