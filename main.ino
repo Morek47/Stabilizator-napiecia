@@ -5,7 +5,179 @@
 #include <Wire.h>
 #include <Adafruit_SH1106.h>
 #include <ArduinoEigen.h>
+// Deklaracje funkcji
+void setup();
+void loop();
+void readSensors();
+void logData();
+void checkAlarm();
+void autoCalibrate();
+void energyManagement();
+void calibrateSensors();
+float calculatePID(float setpoint, float measuredValue);
+float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent);
+void updateRLS(float voltageError);
+void updateQ(int state, int action, float reward, int nextState);
+float calculateReward(float voltageError);
+int chooseAction(int state);
+void controlExcitationCoils(float controlSignal);
+void updateLearningAlgorithm(float voltageError);
 
+// Główne funkcje
+void setup() {
+    // Ustawienie pinów jako wyjścia dla multipleksera
+    pinMode(muxSelectPinA, OUTPUT);
+    pinMode(muxSelectPinB, OUTPUT);
+
+    // Ustawienie pinów PWM
+    pinMode(PIN_EXCITATION_COIL_1, OUTPUT);
+    pinMode(PIN_EXCITATION_COIL_2, OUTPUT);
+
+    server.begin();
+    display.begin();
+    calibrateSensors();
+}
+
+void loop() {
+    server.handleClient();
+
+    // Odczyt wartości z czujników za pomocą multipleksera
+    readSensors();
+
+    // Odczyt napięcia i prądu z dodatkowych zewnętrznych czujników
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Logowanie danych
+    logData(); 
+
+    // Sprawdzenie alarmów
+    checkAlarm(); 
+
+    // Automatyczna kalibracja
+    autoCalibrate(); 
+
+    // Zarządzanie energią
+    energyManagement(); 
+
+    // Obliczanie wydajności
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+
+    // Monitorowanie wydajności i aktualizacja Kp
+    if (efficiency > bestEfficiency) {
+        bestEfficiency = efficiency;
+        bestKp = Kp;
+    } else {
+        Kp = bestKp; // Przywrócenie do najlepszego Kp
+    }
+
+    // Adaptacja Kp (algorytm adaptacyjny PID)
+    float error = VOLTAGE_SETPOINT - voltageIn[0];
+    if (abs(error) > Kp_change_threshold) { 
+        Kp += Kp_change_rate * error;
+        Kp = constrain(Kp, Kp_min, Kp_max); 
+    }
+
+    // Q-learning
+    int state = (int)(abs(VOLTAGE_SETPOINT - voltageIn[0]) / 2);
+    state = constrain(state, 0, NUM_STATES - 1); 
+
+    int action = chooseAction(state);
+    Kp = action * 0.5 + 1.0; 
+
+    float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+    controlExcitationCoils(pidOutput); 
+}
+
+// Funkcje pomocnicze
+void readSensors() {
+    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+        digitalWrite(muxSelectPinA, sensor & 0x01); 
+        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); 
+
+        if (sensor < 2) { 
+            float Vcc = 5.0; 
+            float Sensitivity = 0.066; 
+            float Vout = analogRead(muxInputPins[sensor]) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); 
+            currentIn[sensor] = (Vout - (Vcc / 2.0)) / Sensitivity; 
+        } else { 
+            float multiplier = 100.0; 
+            voltageIn[sensor - 2] = analogRead(muxInputPins[sensor]) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE) * multiplier; 
+        }
+    }
+}
+
+void logData() {
+    voltageHistory[historyIndex] = voltageIn[0];
+    currentHistory[historyIndex] = currentIn[0];
+    historyIndex = (historyIndex + 1) % HISTORY_SIZE;
+    Serial.print("Logged Voltage: ");
+    Serial.print(voltageIn[0]);
+    Serial.print(" V, Current: ");
+    Serial.print(currentIn[0]);
+    Serial.println(" A");
+}
+
+void checkAlarm() {
+    if (voltageIn[0] < 220 || voltageIn[0] > 240) {
+        Serial.println("Alarm: Voltage out of range!");
+    }
+    if (currentIn[0] > 5.0) {
+        Serial.println("Alarm: Current too high!");
+    }
+}
+
+void autoCalibrate() {
+    static unsigned long lastCalibrationTime = 0;
+    if (millis() - lastCalibrationTime > 60000) { 
+        calibrateSensors();
+        lastCalibrationTime = millis();
+        Serial.println("Auto-calibration completed.");
+    }
+}
+
+void energyManagement() {
+    float totalPower = voltageIn[0] * currentIn[0];
+    if (totalPower > 1000) {
+        Serial.println("Energy Management: High power consumption detected!");
+    }
+}
+
+void calibrateSensors() {
+    // Implementacja kalibracji czujników
+}
+
+float calculatePID(float setpoint, float measuredValue) {
+    // Implementacja obliczeń PID
+}
+
+float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
+    // Implementacja obliczeń wydajności
+}
+
+void updateRLS(float voltageError) {
+    // Implementacja RLS
+}
+
+void updateQ(int state, int action, float reward, int nextState) {
+    // Implementacja aktualizacji Q-learning
+}
+
+float calculateReward(float voltageError) {
+    // Implementacja obliczeń nagrody
+}
+
+int chooseAction(int state) {
+    // Implementacja wyboru akcji
+}
+
+void controlExcitationCoils(float controlSignal) {
+    // Implementacja kontroli cewek wzbudzenia
+}
+
+void updateLearningAlgorithm(float voltageError) {
+    // Implementacja aktualizacji algorytmu uczenia
+}
 #include <Arduino.h>  // Ensure required header is included
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
