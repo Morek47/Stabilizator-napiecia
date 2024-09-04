@@ -1,1 +1,0 @@
-# Stabilizator-napiecia
