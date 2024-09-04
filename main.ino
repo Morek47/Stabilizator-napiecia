@@ -6,11 +6,56 @@
 #include <Adafruit_SH1106.h>
 #include <ArduinoEigen.h>
 
-// Definicje pinów dla tranzystorów
-const int transistorPin1 = D4;
-const int transistorPin2 = D5;
-const int transistorPin3 = D6;
-const int transistorPin4 = D7;
+
+// Definicje pinów dla tranzystorów (już zdefiniowane)
+// const int transistorPin1 = D4;
+// const int transistorPin2 = D5;
+// const int transistorPin3 = D6;
+// const int transistorPin4 = D7;
+
+// ... (reszta twojego kodu)
+
+void setup() {
+    // ... (reszta twojego kodu)
+
+    // Ustawienie pinów tranzystorów jako wyjścia
+    pinMode(transistorPin1, OUTPUT);
+    pinMode(transistorPin2, OUTPUT);
+    pinMode(transistorPin3, OUTPUT);
+    pinMode(transistorPin4, OUTPUT);
+}
+
+void loop() {
+    // ... (reszta twojego kodu)
+
+    // Sterowanie tranzystorami
+    controlTransistors(voltageIn[0]); // Przekazujemy napięcie wejściowe do funkcji sterującej
+
+    // ... (reszta twojego kodu)
+
+    // Sterowanie cewką wzbudzenia (już istnieje w twoim kodzie)
+    // controlExcitationCoils(pidOutput);
+
+}
+
+void controlTransistors(float voltage) {
+    // Tutaj zaimplementuj algorytm sterowania PWM dla tranzystorów
+    // Na podstawie napięcia 'voltage' oblicz wypełnienia PWM dla każdego tranzystora
+
+    // Przykładowa implementacja (dostosuj do swoich potrzeb):
+    int pwm1 = map(voltage, 0, VOLTAGE_REFERENCE, 0, 255); // Proste mapowanie napięcia na wypełnienie PWM
+    int pwm2 = map(voltage, 0, VOLTAGE_REFERENCE, 255, 0); // Odwrotne mapowanie dla drugiego tranzystora
+    int pwm3 = ...; // Podobnie dla pozostałych tranzystorów
+    int pwm4 = ...;
+
+    // Ustaw wypełnienia PWM na pinach tranzystorów
+    analogWrite(transistorPin1, pwm1);
+    analogWrite(transistorPin2, pwm2);
+    analogWrite(transistorPin3, pwm3);
+    analogWrite(transistorPin4, pwm4);
+}
+
+// ... (reszta twojego kodu)
 
 // Stałe konfiguracyjne
 const float LOAD_THRESHOLD = 0.5;
