@@ -6,17 +6,104 @@
 #include <Adafruit_SH1106.h>
 #include <ArduinoEigen.h>
 
+// Definicje pinów dla tranzystorów 
+const int mosfetPin = D4;      // Pin dla MOSFET IRFP460
+const int bjtPin1 = D5;         // Pin dla BJT MJE13009
+const int bjtPin2 = D6;         // Pin dla BJT 2SC5200
+const int bjtPin3 = D7;         // Pin dla BJT 2SA1943
 
-// Definicje pinów dla tranzystorów (już zdefiniowane)
-// const int transistorPin1 = D4;
-// const int transistorPin2 = D5;
-// const int transistorPin3 = D6;
-// const int transistorPin4 = D7;
 
-// ... (reszta twojego kodu)
+// Stałe konfiguracyjne
+const float LOAD_THRESHOLD = 0.5;
+const float COMPENSATION_FACTOR = 0.1;
+const int MAX_EXCITATION_CURRENT = 255;
+
+
+// Parametry adaptacji Kp
+float Kp_max = 5.0;
+float Kp_min = 1.0;
+float Kp_change_rate = 0.01;
+float Kp_change_threshold = 0.5;
+
+// Maksymalny prąd kolektora dla tranzystorów BJT (dostosuj do swoich tranzystorów)
+const float MAX_COLLECTOR_CURRENT = 5.0; // Przykład: 5A
 
 void setup() {
-    // ... (reszta twojego kodu)
+  
+
+    // Ustawienie pinów tranzystorów jako wyjścia
+    pinMode(mosfetPin, OUTPUT);
+    pinMode(bjtPin1, OUTPUT);
+    pinMode(bjtPin2, OUTPUT);
+    pinMode(bjtPin3, OUTPUT);
+}
+
+void loop() {
+    
+
+    // Sterowanie tranzystorami
+    controlTransistors(voltageIn[0]); 
+
+   
+
+    // Sterowanie cewką wzbudzenia (już istnieje w twoim kodzie)
+    // controlExcitationCoils(pidOutput);
+
+   
+}
+
+void controlTransistors(float voltage) {
+    // Obliczanie wypełnienia PWM dla tranzystorów BJT
+    int bjtPwm = calculateBjtPwm(voltage);
+
+    // Sterowanie tranzystorami BJT
+    analogWrite(bjtPin1, bjtPwm);
+    analogWrite(bjtPin2, bjtPwm); 
+    analogWrite(bjtPin3, bjtPwm);
+
+    // Sterowanie MOSFETem (wysoka częstotliwość PWM dla szybkiego przełączania)
+    int mosfetPwm = map(bjtPwm, 0, 255, 0, 255); 
+    analogWrite(mosfetPin, mosfetPwm);
+}
+
+float calculateBjtPwm(float voltage) {
+    // 1. Obliczanie błędu regulacji
+    float error = VOLTAGE_SETPOINT - voltage;
+
+    // 2. Obliczanie składowych PID
+    integral += error; 
+    float derivative = error - previousError;
+    previousError = error;
+
+    // 3. Obliczanie sygnału sterującego PID
+    float pidOutput = Kp * error + Ki * integral + Kd * derivative;
+
+    // 4. Adaptacja parametrów PID (przykładowy algorytm)
+    if (abs(error) > Kp_change_threshold) {
+        Kp += Kp_change_rate * error;
+        Kp = constrain(Kp, Kp_min, Kp_max);
+    }
+
+    // 5. Mapowanie sygnału PID na wypełnienie PWM dla tranzystorów BJT
+    // Uwzględnij wzmocnienie prądowe (hFE) tranzystorów
+    // Przykład: Zakładamy hFE = 100 dla wszystkich tranzystorów BJT
+    const int hFE = 100;
+    float baseCurrent = pidOutput / hFE;
+    int bjtPwm = map(baseCurrent, 0, 5.0 / 1000.0, 0, 255); // Zakładamy maksymalny prąd bazy 5mA
+
+    // 6. Ograniczenie wypełnienia PWM i prądu
+    bjtPwm = constrain(bjtPwm, 0, 255);
+
+    // 7. Dodatkowe ograniczenie prądu kolektora (przykład)
+    // Załóżmy, że mierzysz prąd kolektora za pomocą czujnika na pinie A3
+    float collectorCurrent = analogRead(A3) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE) * 10.0; // Zakładamy przekładnik 10A/1V
+    if (collectorCurrent > MAX_COLLECTOR_CURRENT) {
+        bjtPwm = 0; // Wyłącz tranzystory, jeśli prąd jest zbyt wysoki
+    }
+
+    return bjtPwm;
+}
+
 
     // Ustawienie pinów tranzystorów jako wyjścia
     pinMode(transistorPin1, OUTPUT);
@@ -26,12 +113,12 @@ void setup() {
 }
 
 void loop() {
-    // ... (reszta twojego kodu)
+   
 
     // Sterowanie tranzystorami
     controlTransistors(voltageIn[0]); // Przekazujemy napięcie wejściowe do funkcji sterującej
 
-    // ... (reszta twojego kodu)
+   
 
     // Sterowanie cewką wzbudzenia (już istnieje w twoim kodzie)
     // controlExcitationCoils(pidOutput);
