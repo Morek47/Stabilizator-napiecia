@@ -518,7 +518,123 @@ void loop() {
     updateLearningAlgorithm(VOLTAGE_SETPOINT - voltageIn[0]);
 
 
+// Dodane funkcje
+void logData() {
+    // Logowanie danych do historii
+    voltageHistory[historyIndex] = voltageIn[0];
+    currentHistory[historyIndex] = currentIn[0];
+    historyIndex = (historyIndex + 1) % HISTORY_SIZE;
+    Serial.print("Logged Voltage: ");
+    Serial.print(voltageIn[0]);
+    Serial.print(" V, Current: ");
+    Serial.print(currentIn[0]);
+    Serial.println(" A");
+}
 
+void checkAlarm() {
+    // Sprawdzenie alarmów
+    if (voltageIn[0] < 220 || voltageIn[0] > 240) {
+        Serial.println("Alarm: Voltage out of range!");
+    }
+    if (currentIn[0] > 5.0) {
+        Serial.println("Alarm: Current too high!");
+    }
+}
+
+void autoCalibrate() {
+    // Automatyczna kalibracja
+    static unsigned long lastCalibrationTime = 0;
+    if (millis() - lastCalibrationTime > 60000) { // Co 60 sekund
+        calibrateSensors();
+        lastCalibrationTime = millis();
+        Serial.println("Auto-calibration completed.");
+    }
+}
+
+void energyManagement() {
+    // Zarządzanie energią
+    float totalPower = voltageIn[0] * currentIn[0];
+    if (totalPower > 1000) {
+        Serial.println("Energy Management: High power consumption detected!");
+    }
+}
+
+void loop() {
+    server.handleClient();
+
+    // Odczyt wartości z czujników za pomocą multipleksera
+    readSensors();
+
+    // Odczyt napięcia i prądu z dodatkowych zewnętrznych czujników
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Logowanie danych
+    logData(); // Funkcja logowania danych
+
+    // Sprawdzenie alarmów
+    checkAlarm(); // Funkcja sprawdzająca alarmy
+
+    // Automatyczna kalibracja
+    autoCalibrate(); // Funkcja automatycznej kalibracji
+
+    // Zarządzanie energią
+    energyManagement(); // Funkcja zarządzania energią
+
+    // Obliczanie wydajności
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+
+    // Monitorowanie wydajności i aktualizacja Kp
+    if (efficiency > bestEfficiency) {
+        bestEfficiency = efficiency;
+        bestKp = Kp;
+    } else {
+        Kp = bestKp; // Przywrócenie do najlepszego Kp
+    }
+
+    // Adaptacja Kp (algorytm adaptacyjny PID)
+    float error = VOLTAGE_SETPOINT - voltageIn[0];
+    if (abs(error) > Kp_change_threshold) { // Zmień Kp, jeśli błąd jest duży
+      Kp += Kp_change_rate * error;
+      Kp = constrain(Kp, Kp_min, Kp_max); // Ogranicz Kp do dozwolonego zakresu
+    }
+
+    // Q-learning
+    // 1. Obliczanie stanu
+    int state = (int)(abs(VOLTAGE_SETPOINT - voltageIn[0]) / 2);
+    state = constrain(state, 0, NUM_STATES - 1); 
+
+    // 2. Wybór akcji (Kp)
+    int action = chooseAction(state);
+    Kp = action * 0.5 + 1.0; // Przypisanie wartości Kp na podstawie akcji
+
+    // Uwzględnienie odczytów z czujników w obliczeniach PID
+    float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+    controlExcitationCoils(pidOutput); // Kontrola cewek wzbudzenia
+
+    // 4. Obliczenie nagrody
+    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
+
+    // 5. Aktualizacja Q-learning
+    updateQ(state, lastAction, reward, state); 
+
+    // Opóźnienie 100ms
+    delay(100);
+
+    // Aktualizacja algorytmu uczenia maszynowego
+    updateLearningAlgorithm(VOLTAGE_SETPOINT - voltageIn[0]);
+
+    // Wyświetlanie danych na OLED
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("Napięcie: ");
+    display.print(voltageIn[0]);
+    display.println(" V");
+    display.print("Prąd: ");
+    display.print(currentIn[0]);
+    display.println(" A");
+    display.display(); // Wyświetl dane
+}
     // Wyświetlanie danych na OLED
     display.clearDisplay();
     display.setCursor(0, 0);
