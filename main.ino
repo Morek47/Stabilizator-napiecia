@@ -12,138 +12,6 @@ const int bjtPin1 = D5;         // Pin dla BJT MJE13009
 const int bjtPin2 = D6;         // Pin dla BJT 2SC5200
 const int bjtPin3 = D7;         // Pin dla BJT 2SA1943
 
-
-// Stałe konfiguracyjne
-const float LOAD_THRESHOLD = 0.5;
-const float COMPENSATION_FACTOR = 0.1;
-const int MAX_EXCITATION_CURRENT = 255;
-
-
-// Parametry adaptacji Kp
-float Kp_max = 5.0;
-float Kp_min = 1.0;
-float Kp_change_rate = 0.01;
-float Kp_change_threshold = 0.5;
-
-// Maksymalny prąd kolektora dla tranzystorów BJT (dostosuj do swoich tranzystorów)
-const float MAX_COLLECTOR_CURRENT = 5.0; // Przykład: 5A
-
-void setup() {
-  
-
-    // Ustawienie pinów tranzystorów jako wyjścia
-    pinMode(mosfetPin, OUTPUT);
-    pinMode(bjtPin1, OUTPUT);
-    pinMode(bjtPin2, OUTPUT);
-    pinMode(bjtPin3, OUTPUT);
-}
-
-void loop() {
-    
-
-    // Sterowanie tranzystorami
-    controlTransistors(voltageIn[0]); 
-
-   
-
-    // Sterowanie cewką wzbudzenia (już istnieje w twoim kodzie)
-    // controlExcitationCoils(pidOutput);
-
-   
-}
-
-void controlTransistors(float voltage) {
-    // Obliczanie wypełnienia PWM dla tranzystorów BJT
-    int bjtPwm = calculateBjtPwm(voltage);
-
-    // Sterowanie tranzystorami BJT
-    analogWrite(bjtPin1, bjtPwm);
-    analogWrite(bjtPin2, bjtPwm); 
-    analogWrite(bjtPin3, bjtPwm);
-
-    // Sterowanie MOSFETem (wysoka częstotliwość PWM dla szybkiego przełączania)
-    int mosfetPwm = map(bjtPwm, 0, 255, 0, 255); 
-    analogWrite(mosfetPin, mosfetPwm);
-}
-
-float calculateBjtPwm(float voltage) {
-    // 1. Obliczanie błędu regulacji
-    float error = VOLTAGE_SETPOINT - voltage;
-
-    // 2. Obliczanie składowych PID
-    integral += error; 
-    float derivative = error - previousError;
-    previousError = error;
-
-    // 3. Obliczanie sygnału sterującego PID
-    float pidOutput = Kp * error + Ki * integral + Kd * derivative;
-
-    // 4. Adaptacja parametrów PID (przykładowy algorytm)
-    if (abs(error) > Kp_change_threshold) {
-        Kp += Kp_change_rate * error;
-        Kp = constrain(Kp, Kp_min, Kp_max);
-    }
-
-    // 5. Mapowanie sygnału PID na wypełnienie PWM dla tranzystorów BJT
-    // Uwzględnij wzmocnienie prądowe (hFE) tranzystorów
-    // Przykład: Zakładamy hFE = 100 dla wszystkich tranzystorów BJT
-    const int hFE = 100;
-    float baseCurrent = pidOutput / hFE;
-    int bjtPwm = map(baseCurrent, 0, 5.0 / 1000.0, 0, 255); // Zakładamy maksymalny prąd bazy 5mA
-
-    // 6. Ograniczenie wypełnienia PWM i prądu
-    bjtPwm = constrain(bjtPwm, 0, 255);
-
-    // 7. Dodatkowe ograniczenie prądu kolektora (przykład)
-    // Załóżmy, że mierzysz prąd kolektora za pomocą czujnika na pinie A3
-    float collectorCurrent = analogRead(A3) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE) * 10.0; // Zakładamy przekładnik 10A/1V
-    if (collectorCurrent > MAX_COLLECTOR_CURRENT) {
-        bjtPwm = 0; // Wyłącz tranzystory, jeśli prąd jest zbyt wysoki
-    }
-
-    return bjtPwm;
-}
-
-
-    // Ustawienie pinów tranzystorów jako wyjścia
-    pinMode(transistorPin1, OUTPUT);
-    pinMode(transistorPin2, OUTPUT);
-    pinMode(transistorPin3, OUTPUT);
-    pinMode(transistorPin4, OUTPUT);
-}
-
-void loop() {
-   
-
-    // Sterowanie tranzystorami
-    controlTransistors(voltageIn[0]); // Przekazujemy napięcie wejściowe do funkcji sterującej
-
-   
-
-    // Sterowanie cewką wzbudzenia (już istnieje w twoim kodzie)
-    // controlExcitationCoils(pidOutput);
-
-}
-
-void controlTransistors(float voltage) {
-    // Tutaj zaimplementuj algorytm sterowania PWM dla tranzystorów
-    // Na podstawie napięcia 'voltage' oblicz wypełnienia PWM dla każdego tranzystora
-
-    // Przykładowa implementacja (dostosuj do swoich potrzeb):
-    int pwm1 = map(voltage, 0, VOLTAGE_REFERENCE, 0, 255); // Proste mapowanie napięcia na wypełnienie PWM
-    int pwm2 = map(voltage, 0, VOLTAGE_REFERENCE, 255, 0); // Odwrotne mapowanie dla drugiego tranzystora
-    int pwm3 = ...; // Podobnie dla pozostałych tranzystorów
-    int pwm4 = ...;
-
-    // Ustaw wypełnienia PWM na pinach tranzystorów
-    analogWrite(transistorPin1, pwm1);
-    analogWrite(transistorPin2, pwm2);
-    analogWrite(transistorPin3, pwm3);
-    analogWrite(transistorPin4, pwm4);
-}
-
-// 
-
 // Stałe konfiguracyjne
 const float LOAD_THRESHOLD = 0.5;
 const float COMPENSATION_FACTOR = 0.1;
@@ -165,6 +33,12 @@ const float VOLTAGE_REGULATION_HYSTERESIS = 0.1;
 float Kp = 2.0, Ki = 0.5, Kd = 1.0;
 float previousError = 0;
 float integral = 0;
+
+// Parametry adaptacji Kp
+float Kp_max = 5.0;
+float Kp_min = 1.0;
+float Kp_change_rate = 0.01;
+float Kp_change_threshold = 0.5;
 
 // Zmienne globalne
 float voltageIn[2] = {0};
@@ -205,14 +79,16 @@ Adafruit_SH1106 display(128, 64, &Wire, -1);
 const int PIN_EXTERNAL_VOLTAGE_SENSOR = A1;
 const int PIN_EXTERNAL_CURRENT_SENSOR = A2;
 
-// Parametry adaptacji Kp
-float Kp_max = 5.0;
-float Kp_min = 1.0;
-float Kp_change_rate = 0.01;
-float Kp_change_threshold = 0.5;
-
 // Piny dla czujników
 const int muxInputPins[NUM_SENSORS] = {A0, A1, A2, A3};
+
+// Zmienne dla metody Zieglera-Nicholsa
+bool isTuning = false;          // Flaga wskazująca, czy trwa dostrajanie
+float Ku = 0.0;                 // Wzmocnienie krytyczne
+float Tu = 0.0;                 // Okres oscylacji
+unsigned long tuningStartTime = 0; // Czas rozpoczęcia dostrajania
+const unsigned long TUNING_TIMEOUT = 30000; // Maksymalny czas dostrajania (30 sekund)
+bool oscillationsDetected = false; // Flaga wskazująca, czy wykryto oscylacje
 
 void setup() {
     Serial.begin(115200);
@@ -225,10 +101,20 @@ void setup() {
     pinMode(PIN_EXCITATION_COIL_1, OUTPUT);
     pinMode(PIN_EXCITATION_COIL_2, OUTPUT);
 
+    // Ustawienie pinów tranzystorów jako wyjścia
+    pinMode(mosfetPin, OUTPUT);
+    pinMode(bjtPin1, OUTPUT);
+    pinMode(bjtPin2, OUTPUT);
+    pinMode(bjtPin3, OUTPUT);
+
     // Inicjalizacja serwera i wyświetlacza
     server.begin();
     display.begin();
     calibrateSensors();
+
+    // Opcjonalnie: Rozpocznij dostrajanie Zieglera-Nicholsa po uruchomieniu
+    // isTuning = true; 
+    // tuningStartTime = millis();
 }
 
 void loop() {
@@ -264,28 +150,37 @@ void loop() {
         Kp = bestKp;
     }
 
-    // Adaptacja Kp (algorytm adaptacyjny PID)
-    float error = VOLTAGE_SETPOINT - voltageIn[0];
-    if (abs(error) > Kp_change_threshold) {
-      Kp += Kp_change_rate * error;
-      Kp = constrain(Kp, Kp_min, Kp_max);
+    if (isTuning) {
+        // Wykonaj procedurę dostrajania Zieglera-Nicholsa
+        performZieglerNicholsTuning();
+    } else {
+        // Normalna praca stabilizatora z obliczonymi parametrami PID
+        // Adaptacja Kp (algorytm adaptacyjny PID)
+        float error = VOLTAGE_SETPOINT - voltageIn[0];
+        if (abs(error) > Kp_change_threshold) {
+            Kp += Kp_change_rate * error;
+            Kp = constrain(Kp, Kp_min, Kp_max);
+        }
+
+        // Q-learning
+        int state = (int)(abs(VOLTAGE_SETPOINT - voltageIn[0]) / 2);
+        state = constrain(state, 0, NUM_STATES - 1);
+        int action = chooseAction(state);
+        Kp = action * 0.5 + 1.0;
+        float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+        controlExcitationCoils(pidOutput);
+        float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
+        updateQ(state, lastAction, reward, state);
+
+        // Aktualizacja algorytmu uczenia maszynowego
+        updateLearningAlgorithm(VOLTAGE_SETPOINT - voltageIn[0]);
     }
 
-    // Q-learning
-    int state = (int)(abs(VOLTAGE_SETPOINT - voltageIn[0]) / 2);
-    state = constrain(state, 0, NUM_STATES - 1);
-    int action = chooseAction(state);
-    Kp = action * 0.5 + 1.0;
-    float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
-    controlExcitationCoils(pidOutput);
-    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
-    updateQ(state, lastAction, reward, state);
+    // Sterowanie tranzystorami
+    controlTransistors(voltageIn[0]); 
 
     // Opóźnienie 100ms
     delay(100);
-
-    // Aktualizacja algorytmu uczenia maszynowego
-    updateLearningAlgorithm(VOLTAGE_SETPOINT - voltageIn[0]);
 
     // Wyświetlanie danych na OLED
     display.clearDisplay();
@@ -299,6 +194,8 @@ void loop() {
     display.display();
 }
 
+// Funkcje pomocnicze
+// readSensors(), logData(), checkAlarm(), autoCalibrate(), energyManagement(), calibrateSensors(), calculatePID
 // Funkcje pomocnicze
 void readSensors() {
     for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
@@ -479,4 +376,41 @@ void testingAndOptimization() {
         updateQ(currentState, action, reward, nextState);
     }
     Serial.println("Testy i optymalizacja zakończone.");
+ #include <cmath> // Do ewentualnych obliczeń matematycznych
+
+// Stałe i zmienne globalne (dostosuj do swojego systemu)
+const float MAX_VOLTAGE = 5.0; // Maksymalne napięcie sterujące
+const float MIN_VOLTAGE = 0.0; // Minimalne napięcie sterujące
+bool isTuning = false; // Flaga wskazująca, czy trwa dostrajanie
+const int MAX_TUNING_TIME = 10000; // Maksymalny czas dostrajania (w ms)
+
+// Funkcja sterowania tranzystorami
+void controlTransistors(float voltage) {
+    // Ograniczenie napięcia do zakresu
+    voltage = std::max(MIN_VOLTAGE, std::min(voltage, MAX_VOLTAGE));
+
+    // Przykładowa implementacja dla MOSFETów (dostosuj do swoich potrzeb)
+    float gateVoltage1 = voltage; // Napięcie bramki dla pierwszego tranzystora
+    float gateVoltage2 = MAX_VOLTAGE - voltage; // Napięcie bramki dla drugiego tranzystora
+
+    // Analogicznie dla pozostałych tranzystorów (lub innych typów)
+
+    // Tutaj wyślij sygnały sterujące do tranzystorów (np. za pomocą PWM)
+    // ...
 }
+
+// Funkcja dostrajania Zieglera-Nicholsa
+void performZieglerNicholsTuning() {
+    isTuning = true;
+
+    // Znajdź okres oscylacji i wzmocnienie krytyczne
+    // ... (implementacja zależy od systemu)
+
+    // Oblicz parametry regulatora PID na podstawie okresu i wzmocnienia
+    // ... (zgodnie z tabelami Zieglera-Nicholsa)
+
+    // Ustaw parametry regulatora
+    // ...
+
+    isTuning = false;
+} }
