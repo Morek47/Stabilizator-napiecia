@@ -635,15 +635,5 @@ void loop() {
     display.println(" A");
     display.display(); // Wyświetl dane
 }
-    // Wyświetlanie danych na OLED
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.print("Napięcie: ");
-    display.print(voltageIn[0]);
-    display.println(" V");
-    display.print("Prąd: ");
-    display.print(currentIn[0]);
-    display.println(" A");
-    display.display(); // Wyświetl dane
-}
+   
 
