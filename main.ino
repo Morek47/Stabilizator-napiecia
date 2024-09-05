@@ -405,20 +405,32 @@ void displayData() {
     display.display();
 }
 
-void executeAction(int action) {
-    switch(action) {
-        case 0:
-            // Zwiększ prąd cewki wzbudzenia 1 o stałą wartość
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + 10, 0, MAX_EXCITATION_CURRENT));
-            break;
-        case 1:
-            // Zmniejsz prąd cewki wzbudzenia 1 o stałą wartość
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - 10, 0, MAX_EXCITATION_CURRENT));
-            break;
-        case 2:
-            // Zwiększ prąd cewki wzbudzenia 2 o stałą wartość
-            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + 10, 0, MAX_EXCITATION_CURRENT));
-            break;
-        case 3:
-            // Zmniejsz prąd cewki wzbudzenia 2 o stałą wartość
-            analogWrite(ex
+def updateLearningAlgorithm(voltageError):
+    # Obliczanie bieżącego stanu
+    currentState = discretizeState(
+        VOLTAGE_SETPOINT - voltageIn[0], 
+        currentIn[0], 
+        Kp, Ki, Kd,
+        readExcitationCoilCurrent(excitationBJT1Pin), 
+        readExcitationCoilCurrent(excitationBJT2Pin)
+    )
+
+    # Obliczanie nagrody - uwzględniając wpływ akcji na hamowanie i wydajność
+    loadFactor = currentIn[0] / LOAD_THRESHOLD
+    brakingFactor = 1.0 - loadFactor  # Im większe obciążenie, tym mniejszy brakingFactor
+    efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent) 
+    reward = calculateReward(voltageError) * brakingFactor * efficiency
+
+    # Wykonanie akcji (już zaimplementowane w funkcji executeAction)
+
+    # Obliczanie następnego stanu
+    nextState = discretizeState(
+        VOLTAGE_SETPOINT - voltageIn[0], 
+        currentIn[0], 
+        Kp, Ki, Kd,
+        readExcitationCoilCurrent(excitationBJT1Pin), 
+        readExcitationCoilCurrent(excitationBJT2Pin)
+    )
+
+    # Aktualizacja tablicy Q
+    updateQ(currentState, lastAction, reward, nextState)
