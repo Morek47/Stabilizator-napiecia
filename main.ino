@@ -405,3 +405,20 @@ void displayData() {
     display.display();
 }
 
+void executeAction(int action) {
+    switch(action) {
+        case 0:
+            // Zwiększ prąd cewki wzbudzenia 1 o stałą wartość
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + 10, 0, MAX_EXCITATION_CURRENT));
+            break;
+        case 1:
+            // Zmniejsz prąd cewki wzbudzenia 1 o stałą wartość
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - 10, 0, MAX_EXCITATION_CURRENT));
+            break;
+        case 2:
+            // Zwiększ prąd cewki wzbudzenia 2 o stałą wartość
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + 10, 0, MAX_EXCITATION_CURRENT));
+            break;
+        case 3:
+            // Zmniejsz prąd cewki wzbudzenia 2 o stałą wartość
+            analogWrite(ex
