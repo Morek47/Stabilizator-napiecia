@@ -100,65 +100,83 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     int kiBin = constrain((int)(Ki / (1.0 / NUM_STATE_BINS_KI)), 0, NUM_STATE_BINS_KI - 1);
     int kdBin = constrain((int)(Kd / (5.0 / NUM_STATE_BINS_KD)), 0, NUM_STATE_BINS_KD - 1);
 
-    return errorBin + NUM_STATE_BINS_ERROR * (loadBin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
-}
+   // ... (inne includes i definicje)
 
-// Funkcja wyboru akcji (epsilon-greedy)
+// Dodatkowe parametry dyskretyzacji dla prądów cewek wzbudzenia
+const int NUM_STATE_BINS_EXCITATION_CURRENT = 5;
+
+// Zmienna dla całkowitej liczby stanów
+int total_states = (
+    NUM_STATE_BINS_ERROR *
+    NUM_STATE_BINS_LOAD *
+    NUM_STATE_BINS_KP *
+    NUM_STATE_BINS_KI *
+    NUM_STATE_BINS_KD *
+    NUM_STATE_BINS_EXCITATION_CURRENT *
+    NUM_STATE_BINS_EXCITATION_CURRENT
+);
+
+// Redefinicja tablicy Q-learning
+float qTable[total_states * NUM_ACTIONS][3]; 
+
+// Zaktualizowana funkcja chooseAction
 int chooseAction(int state) {
-    float maxQ = qTable[state][0][0];
-    int bestAction = 0;
-    if (random(100) < epsilon * 100) {
-        bestAction = random(NUM_ACTIONS);
-    } else {
-        for (int i = 1; i < NUM_ACTIONS; i++) {
-            if (qTable[state][i][0] > maxQ) {
-                maxQ = qTable[state][i][0];
-                bestAction = i;
-            }
-        }
-    }
-    return bestAction;
+    // ... (implementacja)
 }
 
-// Funkcja obliczania nagrody
-float calculateReward(float error) {
-    return 1.0 / (1.0 + abs(error));
-}
-
-// Funkcja aktualizacji Q
+// Zaktualizowana funkcja updateQ
 void updateQ(int state, int action, float reward, int nextState) {
-    float maxFutureQ = 0;
-    for (int nextAction = 0; nextAction < NUM_ACTIONS; nextAction++) {
-        maxFutureQ = max(maxFutureQ, qTable[nextState][nextAction][0]);
+    // ... (implementacja)
+}
+
+// ... (pozostałe funkcje)
+
+void loop() {
+    // ... (istniejący kod w pętli loop())
+
+    // Tutaj wklej fragment kodu odpowiedzialny za Q-learning i optymalizację bayesowską
+    // Ograniczenie parametrów PID do sensownych zakresów
+    Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
+    Ki = constrain(Ki, 0, 1.0);
+    Kd = constrain(Kd, 0, 5.0);
+
+    float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+
+    // Inteligentne sterowanie cewką wzbudzenia
+    controlTransistors(pidOutput, excitationCurrent, generatorLoad); // Upewnij się, że excitationCurrent i generatorLoad są zdefiniowane
+
+    // Obserwacja nowego stanu i nagrody
+    delay(100); 
+    float newError = VOLTAGE_SETPOINT - voltageIn[0];
+    int newState = discretizeState(newError, generatorLoad, Kp, Ki, Kd, 
+                                   readExcitationCoilCurrent(excitationBJT1Pin), 
+                                   readExcitationCoilCurrent(excitationBJT2Pin)); 
+    float reward = calculateReward(newError);
+
+    // Aktualizacja tablicy Q
+    updateQ(state, action, reward, newState);
+
+    // Automatyczna optymalizacja parametrów
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
+
+        // Testowanie nowych parametrów
+        float newParams[NUM_PARAMS];
+        optimizer.suggestNextParameters(newParams);
+
+        // Zaktualizuj wszystkie parametry, uwzględniając nowe
+        alpha = newParams[0];
+        gamma = newParams[1];
+        epsilon = newParams[2];
+        Kp_min = newParams[3];
+        excitationCurrent = newParams[4] * 5.0; // Zakładamy, że napięcie zasilania cewek to 5V
+        generatorLoad = newParams[5] * LOAD_THRESHOLD;
+
+        // ... (reszta logiki optymalizacji bayesowskiej bez zmian)
     }
-    qTable[state][action][0] += learningRate * (reward + discountFactor * maxFutureQ - qTable[state][action][0]);
+
+    // ... (reszta pętli loop bez zmian)
 }
-
-// Funkcja odczytu prądu cewek wzbudzenia - Zakładamy pomiar pośredni przez tranzystory sterujące
-float readExcitationCoilCurrent(int bjtPin) {
-    // Odczytujemy wartość PWM z pinu tranzystora BJT
-    int pwmValue = analogRead(bjtPin);
-
-    // Zakładamy liniową zależność między PWM a prądem bazy
-    float current = pwmValue * (5.0 / 255.0); // Przykład przeliczania - dostosuj do swoich potrzeb
-    return current;
-}
-
-// Funkcja dostrajania Zieglera-Nicholsa
-void performZieglerNicholsTuning() {
-    bool isTuning = true;
-    unsigned long startTime = millis();
-    int oscillationCount = 0;
-    unsigned long lastPeakTime = 0;
-    bool isIncreasing = true;
-
-    // Reset parametrów regulatora PID
-    Kp = 0;
-    Ki = 0;
-    Kd = 0;
-
-    // Zwiększaj Kp, aż do wystąpienia stabilnych oscylacji
-    while (oscillationCount < 5 && millis() - startTime < 30000) {
         Kp += 0.1;
         float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
         controlExcitationCoils(pidOutput);
@@ -435,131 +453,320 @@ def updateLearningAlgorithm(voltageError):
     # Aktualizacja tablicy Q
     updateQ(currentState, lastAction, reward, nextState)                         
 
+const int NUM_STATE_BINS_EXCITATION_CURRENT = 5;
 
- // Dodatkowe parametry dyskretyzacji dla prądów cewek wzbudzenia
-const int 
+int total_states = (
+     NUM_STATE_BINS_ERROR *
+     NUM_STATE_BINS_LOAD *
+     NUM_STATE_BINS_KP *
+     NUM_STATE_BINS_KI *
+     NUM_STATE_BINS_KD *
+     NUM_STATE_BINS_EXCITATION_CURRENT *
+     NUM_STATE_BINS_EXCITATION_CURRENT
+ );
 
 
-  NUM_STATE_BINS_EXCITATION_CURRENT = 5; 
+float qTable[total_states * NUM_ACTIONS][3];
 
-    // Zmienna dla całkowitej liczby stanów
-    int total_states = (
-        NUM_STATE_BINS_ERROR *
-        NUM_STATE_BINS_LOAD *
-        NUM_STATE_BINS_KP *
-        NUM_STATE_BINS_KI *
-        NUM_STATE_BINS_KD *
-        NUM_STATE_BINS_EXCITATION_CURRENT *
-        NUM_STATE_BINS_EXCITATION_CURRENT
-    );
+int chooseAction(int state) {
+    int start_index = state * NUM_ACTIONS;
+    int end_index = start_index + NUM_ACTIONS;
+    float maxQ = qTable[start_index][0];
+    int bestAction = 0;
+    if (random(100) < epsilon * 100) {
+        bestAction = random(NUM_ACTIONS);
+    } else {
+        for (int i = start_index + 1; i < end_index; i++) {
+            if (qTable[i][0] > maxQ) {
+                maxQ = qTable[i][0];
+                bestAction = i - start_index;  // Adjust action index
+            }
+        }
+    }
+    return bestAction;
+}
 
-    // Redefinicja tablicy Q-learning
-    float qTable[total_states * NUM_ACTIONS][3]; 
+void updateQ(int state, int action, float reward, int nextState) {
+    int stateActionIndex = state * NUM_ACTIONS + action;
+    float maxFutureQ = 0;
+    for (int nextAction = 0; nextAction < NUM_ACTIONS; nextAction++) {
+        int nextStateActionIndex = nextState * NUM_ACTIONS + nextAction;
+        maxFutureQ = max(maxFutureQ, qTable[nextStateActionIndex][0]);
+    }
+    qTable[stateActionIndex][0] += learningRate * (reward + discountFactor * maxFutureQ - qTable[stateActionIndex][0]);
+}
 
-    // Zaktualizowana funkcja chooseAction
-    int chooseAction(int state) {
-        int start_index = state * NUM_ACTIONS;
-        int end_index = start_index + NUM_ACTIONS;
-        float maxQ = qTable[start_index][0];
-        int bestAction = 0;
-        if (random(100) < epsilon * 100) {
-            bestAction = random(NUM_ACTIONS);
+int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd, float excitationCurrent1, float excitationCurrent2) {
+    // ... (implementacja - zakładam, że jest już poprawna, uwzględniając prądy cewek wzbudzenia)
+}
+
+// Ograniczenie parametrów PID do sensownych zakresów
+ Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
+ Ki = constrain(Ki, 0, 1.0);
+ Kd = constrain(Kd, 0, 5.0);
+
+ float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+
+ // Inteligentne sterowanie cewką wzbudzenia
+ controlTransistors(pidOutput, excitationCurrent, generatorLoad); // Upewnij się, że excitationCurrent i generatorLoad są zdefiniowane
+
+ // Obserwacja nowego stanu i nagrody
+ delay(100);
+ float newError = VOLTAGE_SETPOINT - voltageIn[0];
+ int newState = discretizeState(newError, generatorLoad, Kp, Ki, Kd, 
+                                readExcitationCoilCurrent(excitationBJT1Pin), 
+                                readExcitationCoilCurrent(excitationBJT2Pin));
+ float reward = calculateReward(newError);
+
+ // Aktualizacja tablicy Q
+ updateQ(state, action, reward, newState);
+
+ // Automatyczna optymalizacja parametrów
+ if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+     lastOptimizationTime = millis();
+
+     // Testowanie nowych parametrów
+     float newParams[3];
+     optimizer.suggestNextParameters(newParams);
+     alpha = newParams[0];
+     gamma = newParams[1];
+     epsilon = newParams[2];
+
+     // Zbieranie danych o wydajności przez TEST_DURATION
+     float totalEfficiency = 0;
+     unsigned long startTime = millis();
+     while (millis() - startTime < TEST_DURATION) {
+         totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+     }
+     float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+
+     // Przekazanie wyniku do optymalizatora
+     optimizer.update(newParams, averageEfficiency);
+
+     // Jeśli nowe parametry są lepsze, zachowaj je
+     if (averageEfficiency > bestEfficiency) {
+         bestEfficiency = averageEfficiency;
+         memcpy(params, newParams, sizeof(params));
+         alpha = params[0];
+         gamma = params[1];
+         epsilon = params[2];
+     } else {
+         alpha = params[0];
+         gamma = params[1];
+         epsilon = params[2];
+     }
+ }
+
+ // Opóźnienie
+ delay(100);
+
+ // Wyświetlanie danych na OLED
+ displayData();
+
+ // Monitorowanie zużycia pamięci
+ Serial.print("Wolna pamięć: ");
+ Serial.println(freeMemory());
+
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
+#include <Wire.h>
+#include <Adafruit_SH1106.h>
+#include <ArduinoEigen.h>
+#include <BayesOptimizer.h>
+
+// ... (pozostałe includes i definicje)
+
+// Definicja pinu dla MOSFETa sterującego cewkami wzbudzenia
+const int excitationMosfetPin = D10;
+
+// Stałe dla odczytu prądu cewek wzbudzenia (zastąp rzeczywistymi wartościami)
+const float CURRENT_SENSOR_SENSITIVITY = 0.1;  // Ampery na wolt
+const float CURRENT_SENSOR_OFFSET = 0.5;       // Wolty
+
+// Parametry Q-learning
+const float LEARNING_RATE = 0.1;
+const float DISCOUNT_FACTOR = 0.9;
+const float EXPLORATION_RATE = 0.1;
+
+// ... (pozostałe stałe i zmienne)
+
+// Funkcja odczytu prądu płynącego przez cewkę wzbudzenia
+float readExcitationCoilCurrent(int pin) {
+  // ... (implementacja bez zmian)
+}
+
+// Funkcja dyskretyzacji stanu (uzupełniona)
+int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd, float excitationCurrent1, float excitationCurrent2) {
+  // ... (implementacja bez zmian)
+}
+
+// Funkcja obliczania nagrody (przykładowa implementacja uwzględniająca prądy cewek)
+float calculateReward(float voltageError) {
+  // ... (istniejąca implementacja)
+
+  // Uwzględnienie wpływu prądów cewek wzbudzenia (przykład)
+  float excitationCurrentPenalty = 0.1 * (excitationCurrent1 + excitationCurrent2) / (2 * MAX_EXCITATION_CURRENT);
+  reward -= excitationCurrentPenalty; // Kara za wysokie prądy cewek
+
+  return reward;
+}
+
+// Funkcja sterowania cewkami wzbudzenia za pomocą PWM
+void controlExcitationCoils(float pidOutput) {
+  // ... (implementacja bez zmian)
+}
+
+// Implementacja regulatora PID
+float pid_output = 0.0;
+float integral = 0.0;
+float previous_error = 0.0;
+
+float calculate_pid_output(float error) {
+  // Proportional term
+  float proportional = Kp * error;
+
+  // Integral term
+  integral += error * TIME_STEP;
+  float integral_term = Ki * integral;
+
+  // Derivative term
+  float derivative = (error - previous_error) / TIME_STEP;
+  float derivative_term = Kd * derivative;
+
+  // PID output
+  pid_output = proportional + integral_term + derivative_term;
+
+  // Constrain output
+  pid_output = constrain(pid_output, PID_OUTPUT_MIN, PID_OUTPUT_MAX);
+
+  // Store previous error
+  previous_error = error;
+
+  return pid_output;
+}
+
+// Implementacja funkcji Q-learning
+void executeAction(int action) {
+  // Zakładamy, że akcje są indeksowane od 0 i odpowiadają zmianom pidOutput
+  float action_values[] = {-0.1, -0.05, 0.0, 0.05, 0.1}; // Przykładowe wartości akcji
+
+  pidOutput += action_values[action]; 
+
+  // Ogranicz pidOutput do zakresu
+  pidOutput = constrain(pidOutput, PID_OUTPUT_MIN, PID_OUTPUT_MAX);
+
+  // Wykonaj akcję sterującą (np. ustaw PWM dla MOSFETa)
+  controlExcitationCoils(pidOutput); 
+}
+
+void updateQ(int state, int action, float reward, int newState) {
+  float maxQ = 0;
+  for (int i = 0; i < NUM_ACTIONS; i++) {
+    maxQ = max(maxQ, qTable[newState][i]);
+  }
+  qTable[state][action] += LEARNING_RATE * (reward + DISCOUNT_FACTOR * maxQ - qTable[state][action]);
+}
+
+// Funkcja celu dla optymalizacji Bayesowskiej (przykładowa implementacja)
+float evaluatePIDPerformance(const BayesOptimizer::ParameterSet& params) {
+    // Pobierz parametry PID z obiektu ParameterSet
+    float kp = params.get("Kp");
+    float ki = params.get("Ki");
+    float kd = params.get("Kd");
+
+    // Ustaw parametry PID
+    Kp = kp;
+    Ki = ki;
+    Kd = kd;
+
+    // Wykonaj symulację lub eksperyment, aby ocenić jakość regulacji
+    // ... (tutaj umieść kod do przeprowadzenia eksperymentu lub symulacji)
+
+    // Oblicz metrykę jakości (np. błąd średniokwadratowy)
+    float error_sum = 0;
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        // ... (odczyt danych, obliczenie błędu)
+        error_sum += error * error;
+    }
+    float mse = error_sum / NUM_SAMPLES;
+
+    return mse;  // Zwróć wartość metryki (im mniejsza, tym lepsza regulacja)
+}
+
+// ... (pozostałe funkcje)
+
+void setup() {
+  // ... (pozostała część funkcji setup)
+
+  // Konfiguracja pinu dla MOSFETa sterującego cewkami
+  pinMode(excitationMosfetPin, OUTPUT);
+
+  // Inicjalizacja optymalizatora Bayesowskiego (opcjonalne)
+  BayesOptimizer optimizer;
+  optimizer.setSeed(millis()); // Opcjonalne: ustaw ziarno generatora liczb losowych
+
+  // Dodaj parametry do optymalizacji (opcjonalne)
+  optimizer.addParameter("Kp", 0.1, 10.0);   // Przykładowe zakresy parametrów
+  optimizer.addParameter("Ki", 0.01, 1.0);
+  optimizer.addParameter("Kd", 0.0, 5.0);
+
+  // Uruchom optymalizację (opcjonalne)
+  optimizer.optimize(evaluatePIDPerformance, NUM_ITERATIONS); 
+
+  // Pobierz optymalne parametry (opcjonalne)
+  BayesOptimizer::ParameterSet bestParams = optimizer.getBestParameters();
+  Kp = bestParams.get("Kp");
+  Ki = bestParams.get("Ki");
+  Kd = bestParams.get("Kd");
+}
+
+void loop() {
+  // ... (pozostała część funkcji loop bez zmian)
+}
+
+// Funkcja celu dla optymalizacji Bayesowskiej 
+float evaluatePIDPerformance(const BayesOptimizer::ParameterSet& params) {
+    // Pobierz parametry PID z obiektu ParameterSet
+    float kp = params.get("Kp");
+    float ki = params.get("Ki");
+    float kd = params.get("Kd");
+
+    // Ustaw parametry PID
+    Kp = kp;
+    Ki = ki;
+    Kd = kd;
+
+    // Wykonaj symulację lub eksperyment, aby ocenić jakość regulacji
+    float settling_time = 0;
+    bool settled = false;
+    float previous_error = 0;
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        // Odczytaj napięcie wyjściowe generatora
+        float voltage_out = ...; // Tutaj umieść kod do odczytu napięcia
+
+        // Oblicz błąd
+        float error = VOLTAGE_SETPOINT - voltage_out;
+
+        // Sprawdź, czy system osiągnął stan ustalony
+        if (abs(error) < SETTLING_TOLERANCE && abs(previous_error) < SETTLING_TOLERANCE) {
+            settled = true;
         } else {
-            for (int i = start_index + 1; i < end_index; i++) {
-                if (qTable[i][0] > maxQ) {
-                    maxQ = qTable[i][0];
-                    bestAction = i - start_index;  // Adjust action index
-                }
-            }
-        }
-        return bestAction;
-    }
-
-    // Zaktualizowana funkcja updateQ
-    void updateQ(int state, int action, float reward, int nextState) {
-        int stateActionIndex = state * NUM_ACTIONS + action;
-        float maxFutureQ = 0;
-        for (int nextAction = 0; nextAction < NUM_ACTIONS; nextAction++) {
-            int nextStateActionIndex = nextState * NUM_ACTIONS + nextAction;
-            maxFutureQ = max(maxFutureQ, qTable[nextStateActionIndex][0]);
-        }
-        qTable[stateActionIndex][0] += learningRate * (reward + discountFactor * maxFutureQ - qTable[stateActionIndex][0]);
-    }
-
-    // Zaktualizowana funkcja discretizeState (zakładam, że jest już poprawna)
-    int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd, float excitationCurrent1, float excitationCurrent2) {
-        // ... (implementacja - bez zmian)
-    }
-
-    void loop() {
-        // ... (istniejący kod w pętli loop())
-
-        // Ograniczenie parametrów PID do sensownych zakresów
-        Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
-        Ki = constrain(Ki, 0, 1.0);
-        Kd = constrain(Kd, 0, 5.0);
-
-        float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
-
-        // Inteligentne sterowanie cewką wzbudzenia
-        controlTransistors(pidOutput, excitationCurrent, generatorLoad); // Upewnij się, że excitationCurrent i generatorLoad są zdefiniowane
-
-        // Obserwacja nowego stanu i nagrody
-        delay(100); 
-        float newError = VOLTAGE_SETPOINT - voltageIn[0];
-        int newState = discretizeState(newError, generatorLoad, Kp, Ki, Kd, 
-                                       readExcitationCoilCurrent(excitationBJT1Pin), 
-                                       readExcitationCoilCurrent(excitationBJT2Pin)); 
-        float reward = calculateReward(newError);
-
-        // Aktualizacja tablicy Q
-        updateQ(state, action, reward, newState);
-
-        // Automatyczna optymalizacja parametrów
-        if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-            lastOptimizationTime = millis();
-
-            // Testowanie nowych parametrów
-            float newParams[NUM_PARAMS];
-            optimizer.suggestNextParameters(newParams);
-            alpha = newParams[0];
-            gamma = newParams[1];
-            epsilon = newParams[2];
-            Kp_min = newParams[3];
-            excitationCurrent = newParams[4] * 5.0; // Zakładamy, że napięcie zasilania cewek to 5V
-            generatorLoad = newParams[5] * LOAD_THRESHOLD;
-
-            // Zbieranie danych o wydajności przez TEST_DURATION
-            float totalEfficiency = 0;
-            unsigned long startTime = millis();
-            while (millis() - startTime < TEST_DURATION) {
-                totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-            }
-            float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
-
-            // Przekazanie wyniku do optymalizatora
-            optimizer.update(newParams, averageEfficiency);
-
-            // Jeśli nowe parametry są lepsze, zachowaj je
-            if (averageEfficiency > bestEfficiency) {
-                bestEfficiency = averageEfficiency;
-                memcpy(params, newParams, sizeof(params));
-                alpha = params[0];
-                gamma = params[1];
-                epsilon = params[2];
-                Kp_min = params[3];
-                excitationCurrent = params[4] * 5.0;
-                generatorLoad = params[5] * LOAD_THRESHOLD;
-            }
+            settled = false;
+            settling_time = i * SAMPLE_TIME; // Zaktualizuj czas ustalania
         }
 
-        // Opóźnienie
-        delay(100);
+        previous_error = error;
 
-        // Wyświetlanie danych na OLED
-        displayData();
-
-        // Monitorowanie zużycia pamięci
-        Serial.print("Wolna pamięć: ");
-        Serial.println(freeMemory());
+        // Opcjonalnie: dodaj opóźnienie
+        delay(SAMPLE_TIME); 
     }
+
+    // Jeśli system nie osiągnął stanu ustalonego, zwróć dużą wartość kary
+    if (!settled) {
+        return LARGE_PENALTY_VALUE; 
+    }
+
+    return settling_time; // Zwróć czas ustalania (im mniejszy, tym lepsza wydajność)
+}
