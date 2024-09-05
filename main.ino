@@ -17,6 +17,27 @@ const float LOAD_THRESHOLD = 0.5;
 const float COMPENSATION_FACTOR = 0.1;
 const int MAX_EXCITATION_CURRENT = 255;
 
+void controlTransistors(float voltage) {
+    voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+
+    // Przykładowa implementacja dla MOSFETów
+    int pwmValueMosfet = map(voltage, MIN_VOLTAGE, MAX_VOLTAGE, 0, 255);
+    analogWrite(mosfetPin, pwmValueMosfet);
+
+    // Przykładowa implementacja dla BJT (sterowanie liniowe za pomocą PWM)
+    float baseCurrent1 = voltage * 0.3; // Dostosuj do swoich potrzeb
+    float baseCurrent2 = voltage * 0.3; // Dostosuj do swoich potrzeb
+    float baseCurrent3 = voltage * 0.4; // Dostosuj do swoich potrzeb
+
+    int pwmValueBJT1 = map(baseCurrent1, 0, MAX_BASE_CURRENT, 0, 255);
+    int pwmValueBJT2 = map(baseCurrent2, 0, MAX_BASE_CURRENT, 0, 255);
+    int pwmValueBJT3 = map(baseCurrent3, 0, MAX_BASE_CURRENT, 0, 255);
+
+    analogWrite(bjtPin1, pwmValueBJT1);
+    analogWrite(bjtPin2, pwmValueBJT2);
+    analogWrite(bjtPin3, pwmValueBJT3);
+}
+
 // Definicje pinów
 const int muxSelectPinA = D2;
 const int muxSelectPinB = D3;
