@@ -43,6 +43,135 @@ const float epsilon = 0.1;                  // Współczynnik eksploracji dla ep
 const float learningRate = 0.1;             // Współczynnik uczenia dla Q-learning
 const float discountFactor = 0.9;           // Współczynnik dyskontowania dla Q-learning
 
+// ... (definicje pinów, stałe, zmienne globalne)
+
+// Role elementów w stabilizacji napięcia:
+// * MOSFET: główny tranzystor przełączający, kontroluje przepływ prądu do obciążenia
+// * BJT 1-3: tranzystory sterujące MOSFETem i cewkami wzbudzenia, wzmacniają sygnały sterujące
+// * Cewki wzbudzenia: regulują natężenie pola magnetycznego, wpływając na napięcie generowane
+
+// Parametry automatycznej optymalizacji
+const unsigned long OPTIMIZATION_INTERVAL = 60000; // Optymalizacja co minutę
+const unsigned long TEST_DURATION = 10000; // Test nowych parametrów przez 10 sekund
+unsigned long lastOptimizationTime = 0;
+
+// Zmienne dla optymalizacji bayesowskiej (przykład)
+// (Możesz użyć innej biblioteki lub metody optymalizacji)
+#include <BayesOptimizer.h> // Hipotetyczna biblioteka - dostosuj do swojej implementacji
+BayesOptimizer optimizer;
+float params[3] = {alpha, gamma, epsilon}; // Parametry do optymalizacji
+float bounds[3][2] = {{0.01, 0.5}, {0.8, 0.99}, {0.01, 0.3}}; // Zakresy wartości parametrów
+
+// Stałe dane w pamięci flash (PROGMEM)
+const char* welcomeMessage PROGMEM = "Witaj w systemie stabilizacji napięcia!";
+
+void setup() {
+    // ... (inicjalizacja pinów, serwera, wyświetlacza, kalibracja)
+
+    // Inicjalizacja optymalizatora bayesowskiego (przykład z dostosowanymi parametrami)
+    optimizer.initialize(3, bounds, 50, 10); // num_samples = 50, batch_size = 10
+
+    // Wyświetlenie powitania z PROGMEM
+    char buffer[64];
+    strcpy_P(buffer, welcomeMessage);
+    display.println(buffer);
+}
+
+void loop() {
+    server.handleClient();
+
+    // Odczyt wartości z czujników
+    readSensors();
+
+    // Odczyt napięcia i prądu z zewnętrznych czujników
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Logowanie danych (przykład z buforem o stałym rozmiarze)
+    char logBuffer[64];
+    snprintf(logBuffer, sizeof(logBuffer), "Napięcie: %.2f V, Prąd: %.2f A", voltageIn[0], currentIn[0]);
+    logFile.println(logBuffer);
+
+    // Sprawdzenie alarmów
+    checkAlarm();
+
+    // Automatyczna kalibracja
+    autoCalibrate();
+
+    // Zarządzanie energią
+    energyManagement();
+
+    // Obliczanie wydajności
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+
+    // Obliczanie stanu systemu na podstawie pomiarów (zoptymalizowane)
+    int state = calculateSystemState(voltageIn[0], currentIn[0], efficiency);
+
+    // Wybór akcji przez algorytm Q-learning
+    int action = chooseAction(state);
+
+    // Wykonanie akcji (sterowanie tranzystorami i cewką)
+    executeAction(action);
+
+    // Aktualizacja Q-learning na podstawie otrzymanej nagrody
+    float reward = calculateReward(voltageIn[0] - VOLTAGE_SETPOINT);
+    updateQ(state, lastAction, reward, state);
+    lastAction = action;
+
+    // Automatyczna optymalizacja parametrów (przykład z optymalizacją bayesowską)
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
+
+        // Testowanie nowych parametrów
+        float newParams[3];
+        optimizer.suggestNextParameters(newParams);
+        alpha = newParams[0];
+        gamma = newParams[1];
+        epsilon = newParams[2];
+
+        // Zbieranie danych o wydajności przez TEST_DURATION
+        float totalEfficiency = 0;
+        unsigned long startTime = millis();
+        while (millis() - startTime < TEST_DURATION) {
+            // ... (odczyt czujników, obliczenia, sterowanie)
+            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        }
+        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100); // Zakładamy loop co 100ms
+
+        // Przekazanie wyniku do optymalizatora
+        optimizer.update(newParams, averageEfficiency); 
+
+        // Jeśli nowe parametry są lepsze, zachowaj je
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            memcpy(params, newParams, sizeof(params));
+            alpha = params[0];
+            gamma = params[1];
+            epsilon = params[2];
+        } else {
+            // W przeciwnym razie wróć do najlepszych znanych parametrów
+            alpha = params[0];
+            gamma = params[1];
+            epsilon = params[2];
+        }
+    }
+
+    // Opóźnienie
+    delay(100);
+
+    // Wyświetlanie danych na OLED
+    displayData();
+
+    // Monitorowanie zużycia pamięci
+    Serial.print("Wolna pamięć: ");
+    Serial.println(freeMemory());
+}
+
+// ... (pozostałe funkcje: readSensors, checkAlarm, autoCalibrate, 
+// energyManagement, calibrateSensors, calculatePID, calculateEfficiency, 
+// updateQ, calculateReward, chooseAction, calculateSystemState (zoptymalizowane), executeAction, 
+// controlTransistors, displayData)
+
 // Tablica Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3]; // 3 wyjścia dla prądów bazowych
 
