@@ -435,21 +435,27 @@ def updateLearningAlgorithm(voltageError):
     # Aktualizacja tablicy Q
     updateQ(currentState, lastAction, reward, nextState)                         
 
-const int NUM_STATE_BINS_EXCITATION_CURRENT = 5;
 
+ // Dodatkowe parametry dyskretyzacji dla prądów cewek wzbudzenia
+const int 
+
+NUM_STATE_BINS_EXCITATION_CURRENT = 5; 
+
+// Zmienna dla całkowitej liczby stanów
 int total_states = (
-     NUM_STATE_BINS_ERROR *
-     NUM_STATE_BINS_LOAD *
-     NUM_STATE_BINS_KP *
-     NUM_STATE_BINS_KI *
-     NUM_STATE_BINS_KD *
-     NUM_STATE_BINS_EXCITATION_CURRENT *
-     NUM_STATE_BINS_EXCITATION_CURRENT
- );
+    NUM_STATE_BINS_ERROR *
+    NUM_STATE_BINS_LOAD *
+    NUM_STATE_BINS_KP *
+    NUM_STATE_BINS_KI *
+    NUM_STATE_BINS_KD *
+    NUM_STATE_BINS_EXCITATION_CURRENT *
+    NUM_STATE_BINS_EXCITATION_CURRENT
+);
 
+// Redefinicja tablicy Q-learning
+float qTable[total_states * NUM_ACTIONS][3]; 
 
-float qTable[total_states * NUM_ACTIONS][3];
-
+// Zaktualizowana funkcja chooseAction
 int chooseAction(int state) {
     int start_index = state * NUM_ACTIONS;
     int end_index = start_index + NUM_ACTIONS;
@@ -468,6 +474,7 @@ int chooseAction(int state) {
     return bestAction;
 }
 
+// Zaktualizowana funkcja updateQ
 void updateQ(int state, int action, float reward, int nextState) {
     int stateActionIndex = state * NUM_ACTIONS + action;
     float maxFutureQ = 0;
@@ -475,14 +482,18 @@ void updateQ(int state, int action, float reward, int nextState) {
         int nextStateActionIndex = nextState * NUM_ACTIONS + nextAction;
         maxFutureQ = max(maxFutureQ, qTable[nextStateActionIndex][0]);
     }
-    qTable[stateActionIndex][0] += learningRate * (reward + discounitFactor * maxFutureQ - qTable[stateActionIndex][0]);
+    qTable[stateActionIndex][0] += learningRate * (reward + discountFactor * maxFutureQ - qTable[stateActionIndex][0]);
 }
 
+// Zaktualizowana funkcja discretizeState (zakładam, że jest już poprawna)
 int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd, float excitationCurrent1, float excitationCurrent2) {
-    // ... (implementacja - zakładam, że jest już poprawna, uwzględniając prądy cewek wzbudzenia)
+    // ... (implementacja - bez zmian)
 }
 
-// Ograniczenie parametrów PID do sensownych zakresów
+void loop() {
+    // ... (istniejący kod w pętli loop())
+
+    // Ograniczenie parametrów PID do sensownych zakresów
     Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
     Ki = constrain(Ki, 0, 1.0);
     Kd = constrain(Kd, 0, 5.0);
@@ -548,3 +559,4 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     // Monitorowanie zużycia pamięci
     Serial.print("Wolna pamięć: ");
     Serial.println(freeMemory());
+}
