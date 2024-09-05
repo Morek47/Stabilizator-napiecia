@@ -475,7 +475,7 @@ void updateQ(int state, int action, float reward, int nextState) {
         int nextStateActionIndex = nextState * NUM_ACTIONS + nextAction;
         maxFutureQ = max(maxFutureQ, qTable[nextStateActionIndex][0]);
     }
-    qTable[stateActionIndex][0] += learningRate * (reward + discountFactor * maxFutureQ - qTable[stateActionIndex][0]);
+    qTable[stateActionIndex][0] += learningRate * (reward + discounitFactor * maxFutureQ - qTable[stateActionIndex][0]);
 }
 
 int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd, float excitationCurrent1, float excitationCurrent2) {
@@ -483,68 +483,68 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
 }
 
 // Ograniczenie parametrów PID do sensownych zakresów
- Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
- Ki = constrain(Ki, 0, 1.0);
- Kd = constrain(Kd, 0, 5.0);
+    Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
+    Ki = constrain(Ki, 0, 1.0);
+    Kd = constrain(Kd, 0, 5.0);
 
- float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
+    float pidOutput = calculatePID(VOLTAGE_SETPOINT, voltageIn[0]);
 
- // Inteligentne sterowanie cewką wzbudzenia
- controlTransistors(pidOutput, excitationCurrent, generatorLoad); // Upewnij się, że excitationCurrent i generatorLoad są zdefiniowane
+    // Inteligentne sterowanie cewką wzbudzenia
+    controlTransistors(pidOutput, excitationCurrent, generatorLoad); // Upewnij się, że excitationCurrent i generatorLoad są zdefiniowane
 
- // Obserwacja nowego stanu i nagrody
- delay(100);
- float newError = VOLTAGE_SETPOINT - voltageIn[0];
- int newState = discretizeState(newError, generatorLoad, Kp, Ki, Kd, 
-                                readExcitationCoilCurrent(excitationBJT1Pin), 
-                                readExcitationCoilCurrent(excitationBJT2Pin));
- float reward = calculateReward(newError);
+    // Obserwacja nowego stanu i nagrody
+    delay(100); 
+    float newError = VOLTAGE_SETPOINT - voltageIn[0];
+    int newState = discretizeState(newError, generatorLoad, Kp, Ki, Kd, 
+                                   readExcitationCoilCurrent(excitationBJT1Pin), 
+                                   readExcitationCoilCurrent(excitationBJT2Pin)); 
+    float reward = calculateReward(newError);
 
- // Aktualizacja tablicy Q
- updateQ(state, action, reward, newState);
+    // Aktualizacja tablicy Q
+    updateQ(state, action, reward, newState);
 
- // Automatyczna optymalizacja parametrów
- if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-     lastOptimizationTime = millis();
+    // Automatyczna optymalizacja parametrów
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
 
-     // Testowanie nowych parametrów
-     float newParams[3];
-     optimizer.suggestNextParameters(newParams);
-     alpha = newParams[0];
-     gamma = newParams[1];
-     epsilon = newParams[2];
+        // Testowanie nowych parametrów
+        float newParams[3];
+        optimizer.suggestNextParameters(newParams);
+        alpha = newParams[0];
+        gamma = newParams[1];
+        epsilon = newParams[2];
 
-     // Zbieranie danych o wydajności przez TEST_DURATION
-     float totalEfficiency = 0;
-     unsigned long startTime = millis();
-     while (millis() - startTime < TEST_DURATION) {
-         totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-     }
-     float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+        // Zbieranie danych o wydajności przez TEST_DURATION
+        float totalEfficiency = 0;
+        unsigned long startTime = millis();
+        while (millis() - startTime < TEST_DURATION) {
+            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        }
+        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
 
-     // Przekazanie wyniku do optymalizatora
-     optimizer.update(newParams, averageEfficiency);
+        // Przekazanie wyniku do optymalizatora
+        optimizer.update(newParams, averageEfficiency);
 
-     // Jeśli nowe parametry są lepsze, zachowaj je
-     if (averageEfficiency > bestEfficiency) {
-         bestEfficiency = averageEfficiency;
-         memcpy(params, newParams, sizeof(params));
-         alpha = params[0];
-         gamma = params[1];
-         epsilon = params[2];
-     } else {
-         alpha = params[0];
-         gamma = params[1];
-         epsilon = params[2];
-     }
- }
+        // Jeśli nowe parametry są lepsze, zachowaj je
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            memcpy(params, newParams, sizeof(params));
+            alpha = params[0];
+            gamma = params[1];
+            epsilon = params[2];
+        } else {
+            alpha = params[0];
+            gamma = params[1];
+            epsilon = params[2];
+        }
+    }
 
- // Opóźnienie
- delay(100);
+    // Opóźnienie
+    delay(100);
 
- // Wyświetlanie danych na OLED
- displayData();
+    // Wyświetlanie danych na OLED
+    displayData();
 
- // Monitorowanie zużycia pamięci
- Serial.print("Wolna pamięć: ");
- Serial.println(freeMemory());
+    // Monitorowanie zużycia pamięci
+    Serial.print("Wolna pamięć: ");
+    Serial.println(freeMemory());
