@@ -210,11 +210,22 @@ void loop() {
     // Inteligentne sterowanie cewką wzbudzenia
     controlTransistors(pidOutput, excitationCurrent, generatorLoad);
 
+
     // Obserwacja nowego stanu i nagrody
     delay(100); // Poczekaj, aby zaobserwować efekt akcji
     float newError = VOLTAGE_SETPOINT - voltageIn[0];
     int newState = discretizeState(newError, generatorLoad, Kp, Ki, Kd);
     float reward = calculateReward(newError);
+
+int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
+    int errorBin = constrain((int)(abs(error) / (VOLTAGE_SETPOINT / NUM_STATE_BINS_ERROR)), 0, NUM_STATE_BINS_ERROR - 1);
+    int loadBin = constrain((int)(generatorLoad / (LOAD_THRESHOLD / NUM_STATE_BINS_LOAD)), 0, NUM_STATE_BINS_LOAD - 1);
+    int kpBin = constrain((int)(Kp / (Kp_max / NUM_STATE_BINS_KP)), 0, NUM_STATE_BINS_KP - 1);
+    int kiBin = constrain((int)(Ki / (1.0 / NUM_STATE_BINS_KI)), 0, NUM_STATE_BINS_KI - 1);
+    int kdBin = constrain((int)(Kd / (5.0 / NUM_STATE_BINS_KD)), 0, NUM_STATE_BINS_KD - 1);
+
+    return errorBin + NUM_STATE_BINS_ERROR * (loadBin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
+}
 
     // Aktualizacja tablicy Q
     float maxFutureQ = 0;
