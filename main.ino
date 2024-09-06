@@ -133,12 +133,7 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     return stateIndex;
 }
 
-    // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
-    int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
-    int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
-    int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
-    int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
-    int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+    
 
     // Stałe dla minimalnych i maksymalnych wartości zmiennych stanu
 const float MIN_ERROR = -230.0; 
