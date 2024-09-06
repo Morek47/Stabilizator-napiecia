@@ -197,8 +197,7 @@ void updateQ(int state, int action, float reward, int nextState) {
 
 void loop() {
     // ... (istniejący kod w pętli loop())
-
-    // Tutaj wklej fragment kodu odpowiedzialny za Q-learning i optymalizację bayesowską
+aj wklej fragment kodu odpowiedzialny za Q-learning i optymalizację bayesowską
     // Ograniczenie parametrów PID do sensownych zakresów
     Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
     Ki = constrain(Ki, 0, 1.0);
