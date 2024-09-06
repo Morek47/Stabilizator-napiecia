@@ -442,7 +442,6 @@ void setup() {
     display.println(buffer);
     display.display();
 }
-
 void loop() {
     server.handleClient();
 
@@ -453,11 +452,8 @@ void loop() {
     float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
     logData();
-
     checkAlarm();
-
     autoCalibrate();
-
     energyManagement();
 
     float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
@@ -466,58 +462,63 @@ void loop() {
     int action = chooseAction(state);
     executeAction(action);
 
-    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
-    updateQ(state, lastAction, reward, state);
-    lastAction = action;
+// Wykonanie akcji
+executeAction(action);
 
-    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = millis();
+// Opóźnienie, aby dać czas systemowi na reakcję na akcję
+delay(100);
 
-        float newParams[3];
-        optimizer.suggestNextParameters(newParams);
-        params[0] = newParams[0];
-        params[1] = newParams[1];
-        params[2] = newParams[2];
+// Obserwacja nowego stanu po wykonaniu akcji, uwzględniając prądy cewek wzbudzenia
+int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd, 
+                               readExcitationCoilCurrent(excitationBJT1Pin), 
+                               readExcitationCoilCurrent(excitationBJT2Pin));
 
-        float totalEfficiency = 0;
-        unsigned long startTime = millis();
-        while (millis() - startTime < TEST_DURATION) {
-            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-        }
-        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+// Wybór następnej akcji w nowym stanie (zgodnie z polityką ε-greedy)
+int nextAction = chooseAction(newState);
 
-        optimizer.update(newParams, averageEfficiency);
+// Obliczanie nagrody
+float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]); 
 
-        if (averageEfficiency > bestEfficiency) {
-            bestEfficiency = averageEfficiency;
-            memcpy(params, newParams, sizeof(params));
-        }
+// Aktualizacja tablicy Q-learning, uwzględniając następną akcję
+updateQ(state, action, reward, newState, nextAction);
+
+// Zachowanie ostatniej wykonanej akcji i stanu
+lastAction = action;
+state = newState; // Aktualizacja stanu dla następnej iteracji pętli
+
+// Automatyczna optymalizacja parametrów (co określony interwał czasu)
+if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+    lastOptimizationTime = millis();
+
+    // ... (Logika optymalizacji bayesowskiej - bez zmian, ale dodaj komentarze wyjaśniające poszczególne kroki)
+
+// Wyświetlanie danych na OLED
+displayData();
+
+// Monitorowanie zużycia pamięci
+Serial.print("Wolna pamięć: ");
+Serial.println(freeMemory());
+
+// Sprawdzenie dostępności danych z portu szeregowego
+if (Serial.available() > 0) {
+    // Odczyt komendy z komputera
+    String command = Serial.readStringUntil('\n'); 
+
+    // Przetwarzanie komendy
+    if (command == "get_power") {
+        // Wyślij obliczoną moc do komputera
+        Serial.println(calculatedPower); 
+    } else if (command.startsWith("set_kp=")) {
+        // Ustaw nową wartość Kp
+        float newKp = command.substring(7).toFloat();
+        Kp = newKp;
+    } else {
+        // Obsługa nieprawidłowej komendy
+        Serial.println("Błąd: Nieznana komenda!");
     }
-
-    delay(100);
-
-    displayData();
-
-    Serial.print("Wolna pamięć: ");
-    Serial.println(freeMemory());
 }
 
-// Funkcje pomocnicze
-void readSensors() {
-    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
-        digitalWrite(muxSelectPinA, sensor & 0x01);
-        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01);
-        if (sensor < 2) {
-            float Vcc = 5.0;
-            float Sensitivity = 0.066;
-            float Vout = analogRead(muxInputPins[sensor]) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-            currentIn[sensor] = (Vout - (Vcc / 2.0)) / Sensitivity;
-        } else {
-            float multiplier = 100.0;
-            voltageIn[sensor - 2] = analogRead(muxInputPins[sensor]) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE) * multiplier;
-        }
-    }
-}
+
 
 void logData() {
     Serial.print("Napięcie: ");
@@ -543,8 +544,42 @@ void autoCalibrate() {
         lastCalibrationTime = millis();
         Serial.println("Auto-calibration completed.");
     }
-}
+}    // Opóźnienie (jeśli potrzebne)
+delay(100);
 
+// Wyświetlanie danych na OLED
+displayData();
+
+// Monitorowanie zużycia pamięci
+Serial.print("Wolna pamięć: ");
+Serial.println(freeMemory());
+
+// Funkcje pomocnicze
+void readSensors() {
+  // Wstępne obliczenia (dla optymalizacji)
+  float adcToVoltageFactor = VOLTAGE_REFERENCE / ADC_MAX_VALUE;
+  float vccHalf = Vcc / 2.0;
+
+  for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+    // Ustawianie pinów wyboru multipleksera
+    digitalWrite(muxSelectPin1, sensor & 0x01); // Wybór bitu najmniej znaczącego
+    digitalWrite(muxSelectPin2, (sensor >> 1) & 0x01); // Wybór drugiego bitu
+
+    // Odczyt wartości z wybranego czujnika
+    int sensorValue = analogRead(muxInputPin);
+
+    if (sensor < 2) {
+      // Odczyt prądu (zakładając czujnik prądowy oparty na napięciu)
+      float Sensitivity = 0.066; // Czułość czujnika (V/A)
+      float sensorVoltage = sensorValue * adcToVoltageFactor;
+      currentIn[sensor] = (sensorVoltage - vccHalf) / Sensitivity;
+    } else {
+      // Odczyt napięcia
+      float voltageMultiplier = 100.0; // Mnożnik dla skalowania napięcia
+      voltageIn[sensor - 2] = sensorValue * adcToVoltageFactor * voltageMultiplier;
+    }
+  }
+}
 void energyManagement() {
     float totalPower = voltageIn[0] * currentIn[0];
     if (totalPower > 1000) {
