@@ -155,14 +155,7 @@ const float MAX_KI = 1.0;
 const float MIN_KD = 0.0;
 const float MAX_KD = 5.0;
 
-// Funkcja dyskretyzacji stanu
-int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
-    // Normalizacja zmiennych stanu do zakresu [0, 1]
-    float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
-    float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
-    float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
-    float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
-    float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
 
     // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
     int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
