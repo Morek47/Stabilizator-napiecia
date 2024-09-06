@@ -92,13 +92,32 @@ int lastAction = 0;
 // Tablica Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3]; // 3 wyjścia dla prądów bazowych
 
-// Funkcja dyskretyzacji stanu
+// Funkcja dyskretyzacji stanu (dostosowana do Twojego kodu)
 int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
-    int errorBin = constrain((int)(abs(error) / (VOLTAGE_SETPOINT / NUM_STATE_BINS_ERROR)), 0, NUM_STATE_BINS_ERROR - 1);
-    int loadBin = constrain((int)(generatorLoad / (LOAD_THRESHOLD / NUM_STATE_BINS_LOAD)), 0, NUM_STATE_BINS_LOAD - 1);
-    int kpBin = constrain((int)(Kp / (5.0 / NUM_STATE_BINS_KP)), 0, NUM_STATE_BINS_KP - 1);
-    int kiBin = constrain((int)(Ki / (1.0 / NUM_STATE_BINS_KI)), 0, NUM_STATE_BINS_KI - 1);
-    int kdBin = constrain((int)(Kd / (5.0 / NUM_STATE_BINS_KD)), 0, NUM_STATE_BINS_KD - 1);
+    // Normalizacja zmiennych stanu do zakresu [0, 1]
+    float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+    float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+    float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+    float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+    float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+    // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
+    int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+    int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+    int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+    int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+    int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
+    // Obliczanie indeksu stanu na podstawie binów
+    int stateIndex = errorBin + 
+                     loadBin * NUM_STATE_BINS_ERROR + 
+                     kpBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD +
+                     kiBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP +
+                     kdBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI;
+
+    return stateIndex;
+}
+
 
    // ... (inne includes i definicje)
 
