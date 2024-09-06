@@ -108,6 +108,37 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
     int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
 
+    // Stałe dla minimalnych i maksymalnych wartości zmiennych stanu
+const float MIN_ERROR = -230.0; 
+const float MAX_ERROR = 230.0;
+const float MIN_LOAD = 0.0; 
+#ifndef LOAD_THRESHOLD 
+#define LOAD_THRESHOLD 0.5 // Załóżmy wartość domyślną, jeśli LOAD_THRESHOLD nie jest zdefiniowane
+#endif
+const float MAX_LOAD = LOAD_THRESHOLD * 2; 
+const float MIN_KP = 0.0;
+const float MAX_KP = 5.0;
+const float MIN_KI = 0.0;
+const float MAX_KI = 1.0;
+const float MIN_KD = 0.0;
+const float MAX_KD = 5.0;
+
+// Funkcja dyskretyzacji stanu
+int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
+    // Normalizacja zmiennych stanu do zakresu [0, 1]
+    float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+    float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+    float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+    float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+    float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+    // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
+    int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+    int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+    int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+    int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+    int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
     // Obliczanie indeksu stanu na podstawie binów
     int stateIndex = errorBin + 
                      loadBin * NUM_STATE_BINS_ERROR + 
