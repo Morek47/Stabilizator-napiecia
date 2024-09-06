@@ -156,13 +156,7 @@ const float MIN_KD = 0.0;
 const float MAX_KD = 5.0;
 
 
-
-    // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
-    int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
-    int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
-    int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
-    int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
-    int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+    
 
     // Obliczanie indeksu stanu na podstawie binów
     int stateIndex = errorBin + 
