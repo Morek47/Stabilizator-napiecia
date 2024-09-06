@@ -196,7 +196,51 @@ void updateQ(int state, int action, float reward, int nextState) {
 // ... (pozostałe funkcje)
 
 void loop() {
-    // ... (istniejący kod w pętli loop())
+    //  if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+    lastOptimizationTime = millis();
+
+    // Testowanie nowych parametrów
+    float newParams[NUM_PARAMS];
+    optimizer.suggestNextParameters(newParams);
+
+    // Zaktualizuj wszystkie parametry, uwzględniając nowe
+    alpha = newParams[0];
+    gamma = newParams[1];
+    epsilon = newParams[2];
+    Kp_min = newParams[3];
+    excitationCurrent = newParams[4] * 5.0; // Zakładamy, że napięcie zasilania cewek to 5V
+    generatorLoad = newParams[5] * LOAD_THRESHOLD;
+
+    // Zbieranie danych o wydajności przez TEST_DURATION
+    float totalEfficiency = 0;
+    unsigned long startTime = millis();
+    while (millis() - startTime < TEST_DURATION) {
+        totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+    }
+    float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+
+    // Przekazanie wyniku do optymalizatora
+    optimizer.update(newParams, averageEfficiency);
+
+    // Jeśli nowe parametry są lepsze, zachowaj je
+    if (averageEfficiency > bestEfficiency) {
+        bestEfficiency = averageEfficiency;
+        memcpy(params, newParams, sizeof(params));
+    }
+
+    // Zapis lastOptimizationTime do EEPROM
+    EEPROM.put(EEPROM_LAST_OPTIMIZATION_TIME_ADDRESS, lastOptimizationTime);
+
+    // Zapis tablicy Q-learning do EEPROM
+    int qTableSize = sizeof(qTable);
+    for (int i = 0; i < qTableSize; i++) {
+        EEPROM.put(i, ((byte*)qTable)[i]);
+    }
+    EEPROM.write(qTableSize, 'Q'); // Zapisujemy marker 'Q', aby oznaczyć, że tablica Q jest zapisana
+
+    EEPROM.commit(); 
+    Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
+}  ... (istniejący kod w pętli loop()) 
 aj wklej fragment kodu odpowiedzialny za Q-learning i optymalizację bayesowską
     // Ograniczenie parametrów PID do sensownych zakresów
     Kp = constrain(Kp, Kp_min, Kp_max); // Upewnij się, że Kp_min jest zdefiniowane
