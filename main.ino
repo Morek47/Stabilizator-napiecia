@@ -195,9 +195,85 @@ void updateQ(int state, int action, float reward, int nextState) {
 
 // ... (pozostałe funkcje)
 
+// ... (pozostałe includes i definicje, które są faktycznie używane)
+
 void loop() {
-    //  if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-    lastOptimizationTime = millis();
+    server.handleClient();
+
+    // Odczyt wartości z czujników
+    readSensors();
+
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    logData();
+    checkAlarm();
+    autoCalibrate();
+    energyManagement();
+
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+
+    int state = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+    int action = chooseAction(state);
+    executeAction(action);
+
+    // Aktualizacja stanu po wykonaniu akcji
+    delay(100); 
+    int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
+
+    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
+    updateQ(state, lastAction, reward, newState); 
+    lastAction = action;
+
+    // Automatyczna optymalizacja parametrów
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
+
+        // Testowanie nowych parametrów
+        float newParams[NUM_PARAMS];
+        optimizer.suggestNextParameters(newParams);
+        params[0] = newParams[0];
+        params[1] = newParams[1];
+        params[2] = newParams[2];
+
+        float totalEfficiency = 0;
+        unsigned long startTime = millis();
+        while (millis() - startTime < TEST_DURATION) {
+            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        }
+        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+
+        optimizer.update(newParams, averageEfficiency);
+
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            memcpy(params, newParams, sizeof(params));
+        }
+
+        // Zapis lastOptimizationTime do EEPROM
+        EEPROM.put(EEPROM_LAST_OPTIMIZATION_TIME_ADDRESS, lastOptimizationTime);
+
+        // Zapis tablicy Q-learning do EEPROM
+        int qTableSize = sizeof(qTable);
+        for (int i = 0; i < qTableSize; i++) {
+            EEPROM.put(i, ((byte*)qTable)[i]);
+        }
+        EEPROM.write(qTableSize, 'Q'); 
+
+        EEPROM.commit(); 
+        Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
+    }
+
+    delay(100);
+    displayData();
+
+    Serial.print("Wolna pamięć: ");
+    Serial.println(freeMemory());
+}
+
+// ... (pozostałe funkcje: readSensors, logData, checkAlarm, autoCalibrate, 
+//      energyManagement, calculateEfficiency, discretizeState, chooseAction, 
+//      executeAction, calculateReward, updateQ, displayData)
 
     // Testowanie nowych parametrów
     float newParams[NUM_PARAMS];
