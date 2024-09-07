@@ -345,7 +345,13 @@ void readSensors() {
             float voltageMultiplier = 100.0; // Mnożnik dla skalowania napięcia
             voltageIn[sensor - 2] = sensorValue * adcToVoltageFactor * voltageMultiplier;
         }
-    }
+    
+float calculatePID(float setpoint, float measuredValue) {
+    float error = setpoint - measuredValue;
+    integral += error;
+    float derivative = error - previousError;
+    previousError = error;
+    return Kp * error + Ki * integral + Kd * derivative;
 }
 
 void logData() {
