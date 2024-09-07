@@ -123,7 +123,11 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
     int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
 
- // Funkcja wybierająca akcję na podstawie stanu
+    // Kombinacja koszy do jednego indeksu stanu
+    return errorBin + NUM_STATE_BINS_ERROR * (loadBin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
+}
+
+// Funkcja wybierająca akcję na podstawie stanu
 int chooseAction(int state) {
     if (random(0, 100) < epsilon * 100) {
         // Wybierz losową akcję
@@ -133,14 +137,6 @@ int chooseAction(int state) {
         int bestAction = 0;
         float bestQValue = qTable[state][0][0];
         for (int a = 1; a < NUM_ACTIONS; a++) {
-            if (qTable[state][a][0] > bestQValue) {
-                bestAction = a;
-                bestQValue = qTable[state][a][0];
-            }
-        }
-        return bestAction;
-    }
-}
             if (qTable[state][a][0] > bestQValue) {
                 bestAction = a;
                 bestQValue = qTable[state][a][0];
@@ -343,7 +339,9 @@ void readSensors() {
             float voltageMultiplier = 100.0; // Mnożnik dla skalowania napięcia
             voltageIn[sensor - 2] = sensorValue * adcToVoltageFactor * voltageMultiplier;
         }
-    
+    }
+}
+
 float calculatePID(float setpoint, float measuredValue) {
     float error = setpoint - measuredValue;
     integral += error;
@@ -411,6 +409,3 @@ void calibrateSensors() {
         currentIn[i] -= currentOffset;
     }
 }
-
-float calculatePID(float setpoint, float measuredValue) {
-    float error = setpoint - measuredValue
