@@ -1,0 +1,416 @@
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
+#include <Wire.h>
+#include <Adafruit_SH1106.h>
+#include <ArduinoEigen.h>
+#include <BayesOptimizer.h>
+
+// Definicje pinów dla tranzystorów
+const int mosfetPin = D4;      // Pin dla MOSFET IRFP460
+const int bjtPin1 = D5;        // Pin dla BJT MJE13009
+const int bjtPin2 = D6;        // Pin dla BJT 2SC5200
+const int bjtPin3 = D7;        // Pin dla BJT 2SA1943
+
+// Definicje pinów dla dodatkowych tranzystorów sterujących cewkami wzbudzenia
+const int excitationBJT1Pin = D8;
+const int excitationBJT2Pin = D9;
+
+// Stałe konfiguracyjne
+const float LOAD_THRESHOLD = 0.5;
+const float COMPENSATION_FACTOR = 0.1;
+const int MAX_EXCITATION_CURRENT = 255;
+const float MAX_VOLTAGE = 5.0;
+const float MIN_VOLTAGE = 0.0;
+
+// Dodane zmienne
+const float Kp_max = 5.0;
+float previousVoltage = 0.0;
+unsigned long tuningStartTime = 0;
+const unsigned long TUNING_TIMEOUT = 30000;
+bool oscillationsDetected = false;
+float excitationGain = 1.0;
+float Ku = 0.0;
+float Tu = 0.0;
+
+// Parametry PID
+float Kp = 2.0, Ki = 0.5, Kd = 1.0;
+float previousError = 0;
+float integral = 0;
+
+// Parametry dyskretyzacji
+const int NUM_STATE_BINS_ERROR = 10;
+const int NUM_STATE_BINS_LOAD = 5;
+const int NUM_STATE_BINS_KP = 5;
+const int NUM_STATE_BINS_KI = 3;
+const int NUM_STATE_BINS_KD = 3;
+
+const int NUM_ACTIONS = 6;
+const float epsilon = 0.1;
+const float learningRate = 0.1;
+const float discountFactor = 0.9;
+
+// Role elementów w stabilizacji napięcia:
+// * MOSFET: główny tranzystor przełączający, kontroluje przepływ prądu do obciążenia
+// * BJT 1-3: tranzystory sterujące MOSFETem i cewkami wzbudzenia, wzmacniają sygnały sterujące
+// * Cewki wzbudzenia: regulują natężenie pola magnetycznego, wpływając na napięcie generowane
+
+// Parametry automatycznej optymalizacji
+const unsigned long OPTIMIZATION_INTERVAL = 60000; // Optymalizacja co minutę
+const unsigned long TEST_DURATION = 10000; // Test nowych parametrów przez 10 sekund
+unsigned long lastOptimizationTime = 0;
+
+// Zmienne dla optymalizacji bayesowskiej
+BayesOptimizer optimizer;
+float params[3] = {0.1, 0.9, 0.1}; // Parametry do optymalizacji
+float bounds[3][2] = {{0.01, 0.5}, {0.8, 0.99}, {0.01, 0.3}}; // Zakresy wartości parametrów
+float bestEfficiency = 0.0;
+
+// Stałe dane w pamięci flash (PROGMEM)
+const char* welcomeMessage PROGMEM = "Witaj w systemie stabilizacji napięcia!";
+
+// Definicje pinów
+const int muxSelectPinA = D2;
+const int muxSelectPinB = D3;
+const int muxInputPin = A0;
+const int PIN_EXCITATION_COIL_1 = D0;
+const int PIN_EXCITATION_COIL_2 = D1;
+const int NUM_SENSORS = 4;
+const float VOLTAGE_REFERENCE = 3.3;
+const int ADC_MAX_VALUE = 1023;
+float VOLTAGE_SETPOINT = 230.0;
+const float VOLTAGE_REGULATION_HYSTERESIS = 0.1;
+
+// Zmienne globalne
+float voltageIn[2] = {0};
+float currentIn[2] = {0};
+ESP8266WebServer server(80);
+Adafruit_SH1106 display(128, 64, &Wire, -1);
+int lastAction = 0;
+
+// Tablica Q-learning
+float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3]; // 3 wyjścia dla prądów bazowych
+
+// Stałe dla minimalnych i maksymalnych wartości zmiennych stanu
+const float MIN_ERROR = -230.0; 
+const float MAX_ERROR = 230.0;
+const float MIN_LOAD = 0.0; 
+#ifndef LOAD_THRESHOLD 
+#define LOAD_THRESHOLD 0.5 // Załóżmy wartość domyślną, jeśli LOAD_THRESHOLD nie jest zdefiniowane
+#endif
+const float MAX_LOAD = LOAD_THRESHOLD * 2; 
+const float MIN_KP = 0.0;
+const float MAX_KP = 5.0;
+const float MIN_KI = 0.0;
+const float MAX_KI = 1.0;
+const float MIN_KD = 0.0;
+const float MAX_KD = 5.0;
+
+// Funkcja dyskretyzacji stanu
+int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
+    // Normalizacja zmiennych stanu do zakresu [0, 1]
+    float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+    float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+    float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+    float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+    float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+    // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
+    int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+    int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+    int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+    int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+    int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
+    // Obliczanie indeksu stanu na podstawie binów
+    int stateIndex = errorBin + 
+                     loadBin * NUM_STATE_BINS_ERROR + 
+                     kpBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD +
+                     kiBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP +
+                     kdBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI;
+
+    return stateIndex;
+}
+
+// Funkcja wybierająca akcję na podstawie stanu
+int chooseAction(int state) {
+    if (random(0, 100) < epsilon * 100) {
+        // Wybierz losową akcję
+        return random(0, NUM_ACTIONS);
+    } else {
+        // Wybierz najlepszą znaną akcję
+        int bestAction = 0;
+        float bestQValue = qTable[state][0][0];
+        for (int a = 1; a < NUM_ACTIONS; a++) {
+            if (qTable[state][a][0] > bestQValue) {
+                bestAction = a;
+                bestQValue = qTable[state][a][0];
+            }
+        }
+        return bestAction;
+    }
+}
+
+// Funkcja wykonująca akcję
+void executeAction(int action) {
+    // Przykład: wykonanie akcji (do dostosowania)
+    switch (action) {
+        case 0:
+            // Akcja 1
+            break;
+        case 1:
+            // Akcja 2
+            break;
+        // Dodaj więcej przypadków dla innych akcji
+        default:
+            break;
+    }
+}
+
+// Funkcja obliczająca nagrodę
+float calculateReward(float error) {
+    // Przykład: nagroda jako odwrotność bezwzględnego błędu (do dostosowania)
+    return 1.0 / abs(error);
+}
+
+// Zaktualizowana funkcja updateQ
+void updateQ(int state, int action, float reward, int nextState) {
+    // Znajdź maksymalną wartość Q dla nextState
+    float maxQNextState = qTable[nextState][0][0];
+    for (int a = 1; a < NUM_ACTIONS; a++) {
+        if (qTable[nextState][a][0] > maxQNextState) {
+            maxQNextState = qTable[nextState][a][0];
+        }
+    }
+
+    // Aktualizacja wartości Q dla danego stanu i akcji
+    qTable[state][action][0] += learningRate * (reward + discountFactor * maxQNextState - qTable[state][action][0]);
+}
+
+// Funkcja sterowania tranzystorami
+void controlTransistors(float voltage, float excitationCurrent) {
+    voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+
+    digitalWrite(mosfetPin, voltage > 0 ? HIGH : LOW);
+
+    float baseCurrent1 = excitationCurrent * 0.3;
+    float baseCurrent2 = excitationCurrent * 0.3;
+    float baseCurrent3 = excitationCurrent * 0.4;
+
+    int pwmValueBJT1 = map(baseCurrent1, 0, 0.1, 0, 255);
+    int pwmValueBJT2 = map(baseCurrent2, 0, 0.1, 0, 255);
+    int pwmValueBJT3 = map(baseCurrent3, 0, 0.1, 0, 255);
+
+    analogWrite(bjtPin1, pwmValueBJT1);
+    analogWrite(bjtPin2, pwmValueBJT2);
+    analogWrite(bjtPin3, pwmValueBJT3);
+}
+
+void setup() {
+    Serial.begin(115200);
+
+    pinMode(muxSelectPinA, OUTPUT);
+    pinMode(muxSelectPinB, OUTPUT);
+    pinMode(PIN_EXCITATION_COIL_1, OUTPUT);
+    pinMode(PIN_EXCITATION_COIL_2, OUTPUT);
+    pinMode(mosfetPin, OUTPUT);
+    pinMode(bjtPin1, OUTPUT);
+    pinMode(bjtPin2, OUTPUT);
+    pinMode(bjtPin3, OUTPUT);
+
+    server.begin();
+    display.begin();
+    display.display();
+
+    optimizer.initialize(3, bounds, 50, 10);
+
+    char buffer[64];
+    strcpy_P(buffer, welcomeMessage);
+    display.println(buffer);
+    display.display();
+}
+
+void loop() {
+    server.handleClient();
+
+    // Odczyt wartości z czujników
+    readSensors();
+
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    logData();
+    checkAlarm();
+    autoCalibrate();
+    energyManagement();
+
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+
+    // Oblicz wydajność w procentach
+    float efficiencyPercent = efficiency * 100.0;
+
+    int state = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+    int action = chooseAction(state);
+    executeAction(action);
+
+    // Aktualizacja stanu po wykonaniu akcji
+    delay(100); 
+    int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
+
+    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
+    updateQ(state, lastAction, reward, newState); 
+    lastAction = action;
+
+    // Automatyczna optymalizacja parametrów
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
+
+        // Testowanie nowych parametrów
+        float newParams[NUM_PARAMS];
+        optimizer.suggestNextParameters(newParams);
+        params[0] = newParams[0];
+        params[1] = newParams[1];
+        params[2] = newParams[2];
+
+        float totalEfficiency = 0;
+        unsigned long startTime = millis();
+        while (millis() - startTime < TEST_DURATION) {
+            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        }
+        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+
+        optimizer.update(newParams, averageEfficiency);
+
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            memcpy(params, newParams, sizeof(params));
+        }
+
+        // Zapis lastOptimizationTime do EEPROM
+        EEPROM.put(EEPROM_LAST_OPTIMIZATION_TIME_ADDRESS, lastOptimizationTime);
+
+        // Zapis tablicy Q-learning do EEPROM
+        int qTableSize = sizeof(qTable);
+        for (int i = 0; i < qTableSize; i++) {
+            EEPROM.put(i, ((byte*)qTable)[i]);
+        }
+        EEPROM.write(qTableSize, 'Q'); 
+
+        EEPROM.commit(); 
+        Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
+    }
+
+    delay(100);
+    displayData(efficiencyPercent);  // Przekazanie wydajności do funkcji displayData
+
+    Serial.print("Wolna pamięć: ");
+    Serial.println(freeMemory());
+}
+
+void displayData(float efficiencyPercent) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("Napięcie: ");
+    display.print(voltageIn[0]);
+    display.println(" V");
+    display.print("Prąd: ");
+    display.print(currentIn[0]);
+    display.println(" A");
+    display.print("Wydajność: ");
+    display.print(efficiencyPercent);
+    display.println(" %");
+    display.display();
+}
+
+// Funkcje pomocnicze
+void readSensors() {
+    // Wstępne obliczenia (dla optymalizacji)
+    float adcToVoltageFactor = VOLTAGE_REFERENCE / ADC_MAX_VALUE;
+    float vccHalf = Vcc / 2.0;
+
+    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+        // Ustawianie pinów wyboru multipleksera
+        digitalWrite(muxSelectPinA, sensor & 0x01); // Wybór bitu najmniej znaczącego
+        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); // Wybór drugiego bitu
+
+        // Odczyt wartości z wybranego czujnika
+        int sensorValue = analogRead(muxInputPin);
+
+        if (sensor < 2) {
+            // Odczyt prądu (zakładając czujnik prądowy oparty na napięciu)
+            float Sensitivity = 0.066; // Czułość czujnika (V/A)
+            float sensorVoltage = sensorValue * adcToVoltageFactor;
+            currentIn[sensor] = (sensorVoltage - vccHalf) / Sensitivity;
+        } else {
+            // Odczyt napięcia
+            float voltageMultiplier = 100.0; // Mnożnik dla skalowania napięcia
+            voltageIn[sensor - 2] = sensorValue * adcToVoltageFactor * voltageMultiplier;
+        }
+    }
+}
+
+void logData() {
+    Serial.print("Napięcie: ");
+    Serial.print(voltageIn[0]);
+    Serial.print(" V, Prąd: ");
+    Serial.print(currentIn[0]);
+    Serial.println(" A");
+}
+
+void checkAlarm() {
+    if (voltageIn[0] < 220 || voltageIn[0] > 240) {
+        Serial.println("Alarm: Voltage out of range!");
+    }
+    if (currentIn[0] > 5.0) {
+        Serial.println("Alarm: Current too high!");
+    }
+}
+
+void autoCalibrate() {
+    static unsigned long lastCalibrationTime = 0;
+    if (millis() - lastCalibrationTime > 60000) {
+        calibrateSensors();
+        lastCalibrationTime = millis();
+        Serial.println("Auto-calibration completed.");
+    }
+}
+
+void energyManagement() {
+    float totalPower = voltageIn[0] * currentIn[0];
+    if (totalPower > 1000) {
+        Serial.println("Energy Management: High power consumption detected!");
+    }
+}
+
+void calibrateSensors() {
+    Serial.println("Kalibracja czujników...");
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        float voltageSum = 0;
+        float currentSum = 0;
+        for (int j = 0; j < 10; j++) {
+            digitalWrite(muxSelectPinA, i & 0x01);
+            digitalWrite(muxSelectPinB, (i >> 1) & 0x01);
+            voltageSum += analogRead(muxInputPin);
+            currentSum += analogRead(muxInputPin);
+            delay(100);
+        }
+        float voltageOffset = (voltageSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        float currentOffset = (currentSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        Serial.print("Offset napięcia dla czujnika ");
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.println(voltageOffset);
+        Serial.print("Offset prądu dla czujnika ");
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.println(currentOffset);
+        voltageIn[i] -= voltageOffset;
+        currentIn[i] -= currentOffset;
+    }
+}
+
+float calculatePID(float setpoint, float measuredValue) {
+    float error = setpoint - measuredValue;
+    integral += error;
+    float derivative = error - previousError
