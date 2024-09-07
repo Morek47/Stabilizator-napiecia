@@ -409,8 +409,4 @@ void calibrateSensors() {
 }
 
 float calculatePID(float setpoint, float measuredValue) {
-    float error = setpoint - measuredValue;
-    integral += error;
-    float derivative = error - previousError;
-    previousError = error;
-    return K
+    float error = setpoint - measuredValue
