@@ -292,7 +292,41 @@ void advancedLogData(float efficiencyPercent) {
     Serial.print("Moc: ");
     Serial.print(power);
     Serial.println(" W");
-}    morek47
+}  
+ float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
+    float currentScore = evaluate(currentThreshold);
+    float bestThreshold = currentThreshold;
+    float bestScore = currentScore;
+    
+    float newThreshold = currentThreshold + stepSize;
+    float newScore = evaluate(newThreshold);
+    if (newScore > bestScore) {
+        bestThreshold = newThreshold;
+        bestScore = newScore;
+    } else {
+        newThreshold = currentThreshold - stepSize;
+        newScore = evaluate(newThreshold);
+        if (newScore > bestScore) {
+            bestThreshold = newThreshold;
+            bestScore = newScore;
+        }
+    }
+
+    return bestThreshold;
+}
+
+float evaluateThreshold(float threshold) {
+    // Przypisz nowy próg przełączania faz wzbudzenia
+    LOAD_THRESHOLD = threshold;
+    
+    // Mierz wydajność
+    float totalEfficiency = 0;
+    unsigned long startTime = millis();
+    while (millis() - startTime < TEST_DURATION) {
+        totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+    }
+    return totalEfficiency / (TEST_DURATION / 100);
+}
 
 void setup() {
     Serial.begin(115200);
