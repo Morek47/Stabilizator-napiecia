@@ -351,77 +351,7 @@ void setup() {
     display.println(buffer);
     display.display();
 }
-
-void loop() {
-    server.handleClient();
-
-    readSensors();
-
-    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-
-    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-    float efficiencyPercent = efficiency * 100.0;
-
-    float voltageDrop = voltageIn[1] - voltageIn[0];
-
-    advancedLogData(efficiencyPercent); 
-    checkAlarm();
-    autoCalibrate();
-    energyManagement();
-
-    int state = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    int action = chooseAction(state);
-    executeAction(action);
-
-    delay(100); 
-    int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
-
-    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    updateQ(state, lastAction, reward, newState); 
-    lastAction = action;
-
-    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = millis();
-
-        float newParams[3];
-        optimizer.suggestNextParameters(newParams);
-        params[0] = newParams[0];
-        params[1] = newParams[1];
-        params[2] = newParams[2];
-
-        float totalEfficiency = 0;
-        unsigned long startTime = millis();
-        while (millis() - startTime < TEST_DURATION) {
-            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-        }
-        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
-
-        optimizer.update(newParams, averageEfficiency);
-
-        if (averageEfficiency > bestEfficiency) {
-            bestEfficiency = averageEfficiency;
-            memcpy(params, newParams, sizeof(params));
-        }
-
-        EEPROM.put(0, lastOptimizationTime);
-
-        int qTableSize = sizeof(qTable);
-        for (int i = 0; i < qTableSize; i++) {
-            EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
-        }
-        EEPROM.commit(); 
-        Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
-    }
-
-    delay(100);
-    displayData(efficiencyPercent); 
-    adjustControlFrequency(); 
-    monitorTransistors(); 
-    monitorPerformanceAndAdjust(); // Monitorowanie wydajności i dostosowanie sterowania
-
-    Serial.print("Wolna pamięć: ");
-    Serial.println(freeMemory());
+morek47
 }
 
 void displayData(float efficiencyPercent) {
