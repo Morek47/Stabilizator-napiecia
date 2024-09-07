@@ -292,7 +292,7 @@ void advancedLogData(float efficiencyPercent) {
     Serial.print("Moc: ");
     Serial.print(power);
     Serial.println(" W");
-}
+}    morek47
 
 void setup() {
     Serial.begin(115200);
