@@ -148,7 +148,6 @@ int chooseAction(int state) {
 
 // Funkcja wykonująca akcję
 void executeAction(int action) {
-    // Przykład: wykonanie akcji (do dostosowania)
     switch (action) {
         case 0:
             // Akcja 1
@@ -156,7 +155,20 @@ void executeAction(int action) {
         case 1:
             // Akcja 2
             break;
-        // Dodaj więcej przypadków dla innych akcji
+        case 2:
+            // Akcja 3: Sterowanie fazowe
+            if (currentIn[0] > LOAD_THRESHOLD) {
+                digitalWrite(mosfetPin, HIGH);
+            } else {
+                digitalWrite(mosfetPin, LOW);
+            }
+            break;
+        case 3:
+            // Akcja 4: Adaptacyjne wzbudzenie
+            float excitationAdjustment = map(currentIn[0], 0, MAX_EXCITATION_CURRENT, MIN_VOLTAGE, MAX_VOLTAGE);
+            analogWrite(excitationBJT1Pin, excitationAdjustment);
+            analogWrite(excitationBJT2Pin, excitationAdjustment);
+            break;
         default:
             break;
     }
@@ -164,13 +176,11 @@ void executeAction(int action) {
 
 // Funkcja obliczająca nagrodę
 float calculateReward(float error) {
-    // Przykład: nagroda jako odwrotność bezwzględnego błędu (do dostosowania)
     return 1.0 / abs(error);
 }
 
 // Zaktualizowana funkcja updateQ
 void updateQ(int state, int action, float reward, int nextState) {
-    // Znajdź maksymalną wartość Q dla nextState
     float maxQNextState = qTable[nextState][0][0];
     for (int a = 1; a < NUM_ACTIONS; a++) {
         if (qTable[nextState][a][0] > maxQNextState) {
@@ -178,7 +188,6 @@ void updateQ(int state, int action, float reward, int nextState) {
         }
     }
 
-    // Aktualizacja wartości Q dla danego stanu i akcji
     qTable[state][action][0] += learningRate * (reward + discountFactor * maxQNextState - qTable[state][action][0]);
 }
 
@@ -199,6 +208,50 @@ void controlTransistors(float voltage, float excitationCurrent) {
     analogWrite(bjtPin1, pwmValueBJT1);
     analogWrite(bjtPin2, pwmValueBJT2);
     analogWrite(bjtPin3, pwmValueBJT3);
+}
+
+void monitorTransistors() {
+    // Monitorowanie stanu tranzystorów
+    const int tranzystorPins[3] = {bjtPin1, bjtPin2, bjtPin3};
+    for (int i = 0; i < 3; i++) {
+        int state = digitalRead(tranzystorPins[i]);
+        if (state == LOW) {
+            Serial.print("Tranzystor ");
+            Serial.print(i);
+            Serial.println(" jest wyłączony.");
+        } else {
+            Serial.print("Tranzystor ");
+            Serial.print(i);
+            Serial.println(" jest włączony.");
+        }
+    }
+}
+
+void adjustControlFrequency() {
+    static unsigned long lastAdjustmentTime = 0;
+    if (millis() - lastAdjustmentTime > 1000) {
+        if (currentIn[0] > LOAD_THRESHOLD) {
+            controlFrequency = HIGH_FREQUENCY;
+        } else {
+            controlFrequency = LOW_FREQUENCY;
+        }
+        lastAdjustmentTime = millis();
+    }
+}
+
+void advancedLogData(float efficiencyPercent) {
+    Serial.print("Napięcie: ");
+    Serial.print(voltageIn[0]);
+    Serial.print(" V, Prąd: ");
+    Serial.print(currentIn[0]);
+    Serial.print(" A, Wydajność: ");
+    Serial.print(efficiencyPercent);
+    Serial.println(" %");
+    
+    float power = voltageIn[0] * currentIn[0];
+    Serial.print("Moc: ");
+    Serial.print(power);
+    Serial.println(" W");
 }
 
 void setup() {
@@ -228,27 +281,23 @@ void setup() {
 void loop() {
     server.handleClient();
 
-    // Odczyt wartości z czujników
     readSensors();
 
     float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
     float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
-    logData();
+    advancedLogData(efficiencyPercent); 
     checkAlarm();
     autoCalibrate();
     energyManagement();
 
     float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-
-    // Oblicz wydajność w procentach
     float efficiencyPercent = efficiency * 100.0;
 
     int state = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
     int action = chooseAction(state);
     executeAction(action);
 
-    // Aktualizacja stanu po wykonaniu akcji
     delay(100); 
     int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
 
@@ -256,11 +305,9 @@ void loop() {
     updateQ(state, lastAction, reward, newState); 
     lastAction = action;
 
-    // Automatyczna optymalizacja parametrów
     if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
         lastOptimizationTime = millis();
 
-        // Testowanie nowych parametrów
         float newParams[3];
         optimizer.suggestNextParameters(newParams);
         params[0] = newParams[0];
@@ -281,10 +328,8 @@ void loop() {
             memcpy(params, newParams, sizeof(params));
         }
 
-        // Zapis lastOptimizationTime do EEPROM
         EEPROM.put(0, lastOptimizationTime);
 
-        // Zapis tablicy Q-learning do EEPROM
         int qTableSize = sizeof(qTable);
         for (int i = 0; i < qTableSize; i++) {
             EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
@@ -294,7 +339,9 @@ void loop() {
     }
 
     delay(100);
-    displayData(efficiencyPercent);  // Przekazanie wydajności do funkcji displayData
+    displayData(efficiencyPercent); 
+    adjustControlFrequency(); 
+    monitorTransistors(); 
 
     Serial.print("Wolna pamięć: ");
     Serial.println(freeMemory());
@@ -317,26 +364,21 @@ void displayData(float efficiencyPercent) {
 
 // Funkcje pomocnicze
 void readSensors() {
-    // Wstępne obliczenia (dla optymalizacji)
     float adcToVoltageFactor = VOLTAGE_REFERENCE / ADC_MAX_VALUE;
     float vccHalf = VOLTAGE_REFERENCE / 2.0;
 
     for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
-        // Ustawianie pinów wyboru multipleksera
-        digitalWrite(muxSelectPinA, sensor & 0x01); // Wybór bitu najmniej znaczącego
-        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); // Wybór drugiego bitu
+        digitalWrite(muxSelectPinA, sensor & 0x01); 
+        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); 
 
-        // Odczyt wartości z wybranego czujnika
         int sensorValue = analogRead(muxInputPin);
 
         if (sensor < 2) {
-            // Odczyt prądu (zakładając czujnik prądowy oparty na napięciu)
-            float Sensitivity = 0.066; // Czułość czujnika (V/A)
+            float Sensitivity = 0.066; 
             float sensorVoltage = sensorValue * adcToVoltageFactor;
             currentIn[sensor] = (sensorVoltage - vccHalf) / Sensitivity;
         } else {
-            // Odczyt napięcia
-            float voltageMultiplier = 100.0; // Mnożnik dla skalowania napięcia
+            float voltageMultiplier = 100.0; 
             voltageIn[sensor - 2] = sensorValue * adcToVoltageFactor * voltageMultiplier;
         }
     }
@@ -389,19 +431,4 @@ void calibrateSensors() {
     float currentOffsets[NUM_SENSORS] = {0};
 
     for (int i = 0; i < NUM_SENSORS; i++) {
-        float voltageSum = 0;
-        float currentSum = 0;
-        for (int j = 0; j < 10; j++) {
-            digitalWrite(muxSelectPinA, i & 0x01);
-            digitalWrite(muxSelectPinB, (i >> 1) & 0x01);
-            voltageSum += analogRead(muxInputPin);
-            currentSum += analogRead(muxInputPin);
-            delay(100);
-        }
-        voltageOffsets[i] = (voltageSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-        currentOffsets[i] = (currentSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-        Serial.print("Offset napięcia dla czujnika ");
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.println(voltageOffsets[i]);
-        Serial.print
+        float voltageSum = 0
