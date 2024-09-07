@@ -123,26 +123,7 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
     int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
 
-    // Obliczanie indeksu stanu na podstawie binów
-    int stateIndex = errorBin + 
-                     loadBin * NUM_STATE_BINS_ERROR + 
-                     kpBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD +
-                     kiBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP +
-                     kdBin * NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI;
-
-    return stateIndex;
-}
-
-// Funkcja wybierająca akcję na podstawie stanu
-int chooseAction(int state) {
-    if (random(0, 100) < epsilon * 100) {
-        // Wybierz losową akcję
-        return random(0, NUM_ACTIONS);
-    } else {
-        // Wybierz najlepszą znaną akcję
-        int bestAction = 0;
-        float bestQValue = qTable[state][0][0];
-        for (int a = 1; a < NUM_ACTIONS; a++) {
+ morek47
             if (qTable[state][a][0] > bestQValue) {
                 bestAction = a;
                 bestQValue = qTable[state][a][0];
