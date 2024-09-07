@@ -96,9 +96,6 @@ float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NU
 const float MIN_ERROR = -230.0; 
 const float MAX_ERROR = 230.0;
 const float MIN_LOAD = 0.0; 
-#ifndef LOAD_THRESHOLD 
-#define LOAD_THRESHOLD 0.5 // Załóżmy wartość domyślną, jeśli LOAD_THRESHOLD nie jest zdefiniowane
-#endif
 const float MAX_LOAD = LOAD_THRESHOLD * 2; 
 const float MIN_KP = 0.0;
 const float MAX_KP = 5.0;
@@ -191,19 +188,48 @@ void updateQ(int state, int action, float reward, int nextState) {
     qTable[state][action][0] += learningRate * (reward + discountFactor * maxQNextState - qTable[state][action][0]);
 }
 
+// Nowa funkcja monitorująca wydajność i dostosowująca sterowanie
+void monitorPerformanceAndAdjust() {
+    static unsigned long lastAdjustmentTime = 0;
+    if (millis() - lastAdjustmentTime > 1000) {
+        float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        float efficiencyPercent = efficiency * 100.0;
+
+        // Monitorowanie i logowanie wydajności
+        advancedLogData(efficiencyPercent);
+
+        // Dynamiczne dostosowywanie sterowania tranzystorami w zależności od wydajności
+        if (efficiencyPercent < 90.0) {
+            excitationGain += 0.1; // Zwiększenie wzbudzenia
+        } else if (efficiencyPercent > 95.0) {
+            excitationGain -= 0.1; // Zmniejszenie wzbudzenia
+        }
+
+        excitationGain = constrain(excitationGain, 0.0, 1.0); // Ograniczenie wzbudzenia do zakresu 0-1
+
+        lastAdjustmentTime = millis();
+    }
+}
+
 // Funkcja sterowania tranzystorami
 void controlTransistors(float voltage, float excitationCurrent) {
     voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
 
-    digitalWrite(mosfetPin, voltage > 0 ? HIGH : LOW);
+    // Dynamiczne dostosowywanie sterowania tranzystorami
+    if (excitationCurrent > LOAD_THRESHOLD) {
+        digitalWrite(mosfetPin, HIGH);
+    } else {
+        digitalWrite(mosfetPin, LOW);
+    }
 
+    // Ustalenie prądów bazowych dla BJT w sposób adaptacyjny
     float baseCurrent1 = excitationCurrent * 0.3;
     float baseCurrent2 = excitationCurrent * 0.3;
     float baseCurrent3 = excitationCurrent * 0.4;
 
-    int pwmValueBJT1 = map(baseCurrent1, 0, 0.1, 0, 255);
-    int pwmValueBJT2 = map(baseCurrent2, 0, 0.1, 0, 255);
-    int pwmValueBJT3 = map(baseCurrent3, 0, 0.1, 0, 255);
+    int pwmValueBJT1 = map(baseCurrent1, 0, MAX_EXCITATION_CURRENT, 0, 255);
+    int pwmValueBJT2 = map(baseCurrent2, 0, MAX_EXCITATION_CURRENT, 0, 255);
+    int pwmValueBJT3 = map(baseCurrent3, 0, MAX_EXCITATION_CURRENT, 0, 255);
 
     analogWrite(bjtPin1, pwmValueBJT1);
     analogWrite(bjtPin2, pwmValueBJT2);
@@ -286,13 +312,13 @@ void loop() {
     float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
     float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
+    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+    float efficiencyPercent = efficiency * 100.0;
+
     advancedLogData(efficiencyPercent); 
     checkAlarm();
     autoCalibrate();
     energyManagement();
-
-    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-    float efficiencyPercent = efficiency * 100.0;
 
     int state = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
     int action = chooseAction(state);
@@ -342,6 +368,7 @@ void loop() {
     displayData(efficiencyPercent); 
     adjustControlFrequency(); 
     monitorTransistors(); 
+    monitorPerformanceAndAdjust(); // Monitorowanie wydajności i dostosowanie sterowania
 
     Serial.print("Wolna pamięć: ");
     Serial.println(freeMemory());
@@ -395,40 +422,3 @@ float calculatePID(float setpoint, float measuredValue) {
 void logData() {
     Serial.print("Napięcie: ");
     Serial.print(voltageIn[0]);
-    Serial.print(" V, Prąd: ");
-    Serial.print(currentIn[0]);
-    Serial.println(" A");
-}
-
-void checkAlarm() {
-    if (voltageIn[0] < 220 || voltageIn[0] > 240) {
-        Serial.println("Alarm: Voltage out of range!");
-    }
-    if (currentIn[0] > 5.0) {
-        Serial.println("Alarm: Current too high!");
-    }
-}
-
-void autoCalibrate() {
-    static unsigned long lastCalibrationTime = 0;
-    if (millis() - lastCalibrationTime > 60000) {
-        calibrateSensors();
-        lastCalibrationTime = millis();
-        Serial.println("Auto-calibration completed.");
-    }
-}
-
-void energyManagement() {
-    float totalPower = voltageIn[0] * currentIn[0];
-    if (totalPower > 1000) {
-        Serial.println("Energy Management: High power consumption detected!");
-    }
-}
-
-void calibrateSensors() {
-    Serial.println("Kalibracja czujników...");
-    float voltageOffsets[NUM_SENSORS] = {0};
-    float currentOffsets[NUM_SENSORS] = {0};
-
-    for (int i = 0; i < NUM_SENSORS; i++) {
-        float voltageSum = 0
