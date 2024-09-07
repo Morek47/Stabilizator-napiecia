@@ -385,6 +385,9 @@ void energyManagement() {
 
 void calibrateSensors() {
     Serial.println("Kalibracja czujników...");
+    float voltageOffsets[NUM_SENSORS] = {0};
+    float currentOffsets[NUM_SENSORS] = {0};
+
     for (int i = 0; i < NUM_SENSORS; i++) {
         float voltageSum = 0;
         float currentSum = 0;
@@ -395,17 +398,10 @@ void calibrateSensors() {
             currentSum += analogRead(muxInputPin);
             delay(100);
         }
-        float voltageOffset = (voltageSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-        float currentOffset = (currentSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        voltageOffsets[i] = (voltageSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        currentOffsets[i] = (currentSum / 10) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
         Serial.print("Offset napięcia dla czujnika ");
         Serial.print(i);
         Serial.print(": ");
-        Serial.println(voltageOffset);
-        Serial.print("Offset prądu dla czujnika ");
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.println(currentOffset);
-        voltageIn[i] -= voltageOffset;
-        currentIn[i] -= currentOffset;
-    }
-}
+        Serial.println(voltageOffsets[i]);
+        Serial.print
