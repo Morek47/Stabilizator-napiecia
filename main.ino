@@ -390,3 +390,22 @@ void displayData() {
     display.println(" A");
     display.display();
 }
+
+// Funkcja sterowania tranzystorami
+void controlTransistors(float voltage, float excitationCurrent) {
+    voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+
+    digitalWrite(mosfetPin, voltage > 0 ? HIGH : LOW);
+
+    float baseCurrent1 = excitationCurrent * 0.3;
+    float baseCurrent2 = excitationCurrent * 0.3;
+    float baseCurrent3 = excitationCurrent * 0.4;
+
+    int pwmValueBJT1 = map(baseCurrent1, 0, 0.1, 0, 255);
+    int pwmValueBJT2 = map(baseCurrent2, 0, 0.1, 0, 255);
+    int pwmValueBJT3 = map(baseCurrent3, 0, 0.1, 0, 255);
+
+    analogWrite(bjtPin1, pwmValueBJT1);
+    analogWrite(bjtPin2, pwmValueBJT2);
+    analogWrite(bjtPin3, pwmValueBJT3);
+}
