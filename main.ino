@@ -172,8 +172,22 @@ void executeAction(int action) {
 }
 
 // Funkcja obliczająca nagrodę
-float calculateReward(float error) {
-    return 1.0 / abs(error);
+float calculateReward(float error, float efficiency, float voltageDrop) {
+    float reward = 1.0 / abs(error);
+    reward -= voltageDrop * 0.01;  // Kara za spadek napięcia
+    return reward;
+}
+
+// Funkcja obliczająca wydajność
+float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
+    float inputPower = voltageIn * currentIn;
+    float outputPower = externalVoltage * externalCurrent;
+
+    if (inputPower == 0) {
+        return 0;
+    }
+
+    return outputPower / inputPower;
 }
 
 // Zaktualizowana funkcja updateQ
@@ -315,6 +329,8 @@ void loop() {
     float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
     float efficiencyPercent = efficiency * 100.0;
 
+    float voltageDrop = voltageIn[1] - voltageIn[0];
+
     advancedLogData(efficiencyPercent); 
     checkAlarm();
     autoCalibrate();
@@ -327,7 +343,7 @@ void loop() {
     delay(100); 
     int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
 
-    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0]);
+    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
     updateQ(state, lastAction, reward, newState); 
     lastAction = action;
 
@@ -402,23 +418,4 @@ void readSensors() {
 
         if (sensor < 2) {
             float Sensitivity = 0.066; 
-            float sensorVoltage = sensorValue * adcToVoltageFactor;
-            currentIn[sensor] = (sensorVoltage - vccHalf) / Sensitivity;
-        } else {
-            float voltageMultiplier = 100.0; 
-            voltageIn[sensor - 2] = sensorValue * adcToVoltageFactor * voltageMultiplier;
-        }
-    }
-}
-
-float calculatePID(float setpoint, float measuredValue) {
-    float error = setpoint - measuredValue;
-    integral += error;
-    float derivative = error - previousError;
-    previousError = error;
-    return Kp * error + Ki * integral + Kd * derivative;
-}
-
-void logData() {
-    Serial.print("Napięcie: ");
-    Serial.print(voltageIn[0]);
+            float sensorVoltage =
