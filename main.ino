@@ -455,3 +455,45 @@ void loop() {
 
         int qTableSize = sizeof(qTable);
         for
+
+// Funkcja sterowania tranzystorami
+void controlTransistors(float voltage, float excitationCurrent) {
+    voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+
+    // Dynamiczne dostosowywanie sterowania tranzystorami
+    if (excitationCurrent > LOAD_THRESHOLD) {
+        digitalWrite(mosfetPin, HIGH);
+    } else {
+        digitalWrite(mosfetPin, LOW);
+    }
+
+    // Ustalenie prądów bazowych dla BJT w sposób adaptacyjny
+    float baseCurrent1 = excitationCurrent * 0.3;
+    float baseCurrent2 = excitationCurrent * 0.3;
+    float baseCurrent3 = excitationCurrent * 0.4;
+
+    int pwmValueBJT1 = map(baseCurrent1, 0, MAX_EXCITATION_CURRENT, 0, 255);
+    int pwmValueBJT2 = map(baseCurrent2, 0, MAX_EXCITATION_CURRENT, 0, 255);
+    int pwmValueBJT3 = map(baseCurrent3, 0, MAX_EXCITATION_CURRENT, 0, 255);
+
+    analogWrite(bjtPin1, pwmValueBJT1);
+    analogWrite(bjtPin2, pwmValueBJT2);
+    analogWrite(bjtPin3, pwmValueBJT3);
+}
+
+void monitorTransistors() {
+    // Monitorowanie stanu tranzystorów
+    const int tranzystorPins[3] = {bjtPin1, bjtPin2, bjtPin3};
+    for (int i = 0; i < 3; i++) {
+        int state = digitalRead(tranzystorPins[i]);
+        if (state == LOW) {
+            Serial.print("Tranzystor ");
+            Serial.print(i);
+            Serial.println(" jest wyłączony.");
+        } else {
+            Serial.print("Tranzystor ");
+            Serial.print(i);
+            Serial.println(" jest włączony.");
+        }
+    }
+}
