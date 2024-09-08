@@ -59,11 +59,6 @@ const float discountFactor = 0.9;
 // Proszę nie wprowadzać automatycznych zmian w tym fragmencie kodu, 
 // chyba że są one zgodne z powyższą architekturą.
 
-// Role elementów w stabilizacji napięcia:
-// * MOSFET: główny tranzystor przełączający, kontroluje przepływ prądu do obciążenia
-// * BJT 1-3: tranzystory sterujące MOSFETem i cewkami wzbudzenia, wzmacniają sygnały sterujące
-// * Cewki wzbudzenia: regulują natężenie pola magnetycznego, wpływając na napięcie generowane
-
 // Parametry automatycznej optymalizacji
 const unsigned long OPTIMIZATION_INTERVAL = 60000;
 const unsigned long TEST_DURATION = 10000;
@@ -544,3 +539,21 @@ voltageDrop = Serial.parseFloat();
 
     delay(100); 
     int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0
+
+#ifdef __arm__
+// powinno działać dla platform ARM
+extern "C" char* sbrk(int incr);
+#else
+extern char *__brkval;
+#endif
+
+int freeMemory() {
+  char top;
+#ifdef __arm__
+  return &top - reinterpret_cast<char*>(sbrk(0));
+#elif defined(CORE_TEENSY) || (ARDUINO > 103 && ARDUINO != 151)
+  return &top - __brkval;
+#else  // AVR
+  return __brkval ? &top - __brkval : &top - __malloc_heap_start;
+#endif
+}
