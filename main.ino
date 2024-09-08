@@ -382,47 +382,7 @@ void energyManagement() {
     }
 }
 
-// Funkcja loop
-void loop() {
-    server.handleClient();
-
-    readSensors();
-
-    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-
-    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-    float efficiencyPercent = efficiency * 100.0;
-
-    float voltageDrop = voltageIn[1] - voltageIn[0];
-
-    advancedLogData(efficiencyPercent); 
-    checkAlarm();
-    autoCalibrate();
-    energyManagement();
-
-    int state = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    int action = chooseAction(state);
-    executeAction(action);
-
-    delay(100); 
-    int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-
-    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    updateQ(state, lastAction, reward, newState); 
-    lastAction = action;
-
-    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = millis();
-
-        float newParams[3];
-        optimizer.suggestNextParameters(newParams);
-        params[0] = newParams[0];
-        params[1] = newParams[1];
-        params[2] = newParams[2];
-    }
-}
-
+// Funkcja wyświetlania danych na ekranie
 void displayData(float efficiencyPercent) {
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -438,6 +398,7 @@ void displayData(float efficiencyPercent) {
     display.display();
 }
 
+// Funkcja loop
 void loop() {
     server.handleClient();
 
@@ -493,24 +454,4 @@ void loop() {
         EEPROM.put(0, lastOptimizationTime);
 
         int qTableSize = sizeof(qTable);
-        for (int i = 0; i < qTableSize; i++) {
-            EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
-        }
-        EEPROM.commit(); 
-        Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
-        
-        // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
-        LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
-        Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
-        Serial.println(LOAD_THRESHOLD);
-    }
-
-    delay(100);
-    displayData(efficiencyPercent); 
-    adjustControlFrequency(); 
-    monitorTransistors(); 
-    monitorPerformanceAndAdjust(); // Monitorowanie wydajności i dostosowanie sterowania
-
-    Serial.print("Wolna pamięć: ");
-    Serial.println(freeMemory());
-}
+        for
