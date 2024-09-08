@@ -408,9 +408,122 @@ void displayData(float efficiencyPercent) {
 
 // Funkcja loop
 void loop() {
-    server.handleClient();
+    // Odczyt danych z sensorów
+readSensors();
 
-    readSensors();
+// Odczyt napięcia i prądu z zewnętrznych czujników
+float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+// Obliczenie wydajności
+float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+float efficiencyPercent = efficiency * 100.0;
+
+// Obliczenie spadku napięcia
+float voltageDrop = voltageIn[1] - voltageIn[0];
+
+// Logowanie zaawansowanych danych
+advancedLogData(efficiencyPercent);
+
+// Sprawdzenie alarmów
+checkAlarm();
+
+// Automatyczna kalibracja
+autoCalibrate();
+
+// Zarządzanie energią
+energyManagement();
+
+// Q-learning 1 (stabilizator napięcia)
+int state1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
+int action1 = chooseAction(state1);
+executeAction(action1); 
+float reward1 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+int nextState1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+updateQ(state1, action1, reward1, nextState1);
+
+// Q-learning 2 (cewki wzbudzenia)
+int state2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
+int action2 = chooseAction(state2);
+executeAction(action2); 
+float reward2 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+int nextState2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+updateQ(state2, action2, reward2, nextState2);
+
+// Optymalizacja bayesowska (co określony interwał czasu)
+if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+    lastOptimizationTime = millis();
+
+    float newParams[3];
+    optimizer.suggestNextParameters(newParams);
+    params[0] = newParams[0];
+    params[1] = newParams[1];
+    params[2] = newParams[2];
+
+    float totalEfficiency = 0;
+    unsigned long startTime = millis();
+    while (millis() - startTime < TEST_DURATION) {
+        totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+    }
+    float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+
+    optimizer.update(newParams, averageEfficiency);
+
+    if (averageEfficiency > bestEfficiency) {
+        bestEfficiency = averageEfficiency;
+        memcpy(params, newParams, sizeof(params));
+    }
+
+    EEPROM.put(0, lastOptimizationTime);
+
+    int qTableSize = sizeof(qTable); 
+    for (int i = 0; i < qTableSize; i++) {
+        EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
+    }
+    EEPROM.commit(); 
+    Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
+
+    // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
+    LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+    Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
+    Serial.println(LOAD_THRESHOLD);
+}
+
+// Opóźnienie
+delay(100);
+
+// Wyświetlanie danych na ekranie
+displayData(efficiencyPercent); 
+
+// Dostosowanie częstotliwości sterowania
+adjustControlFrequency(); 
+
+// Monitorowanie tranzystorów
+monitorTransistors(); 
+
+// Monitorowanie wydajności i dostosowanie sterowania
+monitorPerformanceAndAdjust(); 
+
+// Wyświetlanie informacji o wolnej pamięci
+Serial.print("Wolna pamięć: ");
+Serial.println(freeMemory());
+
+// Komunikacja z komputerem
+Serial.print(voltageIn[0]);
+Serial.print(",");
+Serial.print(currentIn[0]);
+Serial.print(",");
+Serial.print(externalVoltage);
+Serial.print(",");
+Serial.println(externalCurrent);
+
+// Czekanie na wyniki od komputera
+while (Serial.available() == 0) {}
+
+// Odczyt wyników z komputera
+efficiency = Serial.parseFloat();
+efficiencyPercent = efficiency * 100.0;
+voltageDrop = Serial.parseFloat();
 
     float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
     float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
