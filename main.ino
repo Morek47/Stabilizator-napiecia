@@ -51,6 +51,14 @@ const float epsilon = 0.1;
 const float learningRate = 0.1;
 const float discountFactor = 0.9;
 
+ // Architektura systemu:
+// - 4 tranzystory sterują stabilizatorem napięcia (osobny system Q-learning).
+// - 2 tranzystory sterują cewkami wzbudzenia (osobny system Q-learning).
+// - Oba systemy Q-learning komunikują się ze sobą w sposób inteligentny, 
+//   aby wspólnie uczyć się i dążyć do maksymalizacji wydajności całego układu.
+// Proszę nie wprowadzać automatycznych zmian w tym fragmencie kodu, 
+// chyba że są one zgodne z powyższą architekturą.
+
 // Role elementów w stabilizacji napięcia:
 // * MOSFET: główny tranzystor przełączający, kontroluje przepływ prądu do obciążenia
 // * BJT 1-3: tranzystory sterujące MOSFETem i cewkami wzbudzenia, wzmacniają sygnały sterujące
