@@ -15,7 +15,7 @@ const int bjtPin3 = D7;
 const int excitationBJT1Pin = D8;
 const int excitationBJT2Pin = D9;
 const int PIN_EXTERNAL_VOLTAGE_SENSOR_1 = A1; // Dodaj definicje brakujących pinów
-const int PIN_EXTERNAL_CURRENT_SENSOR_1 = A2; // Dodaj definicje brakujących pinów
+const int PIN_EXTERNAL_CURRENT_SENSOR_1 = A2; const int PWM_INCREMENT = 10; // Przykładowa wartość, dostosuj według potrzeb
 
 // Stałe konfiguracyjne
 float LOAD_THRESHOLD = 0.5;
