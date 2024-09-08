@@ -8,17 +8,17 @@
 #include <BayesOptimizer.h>
 
 // Definicje pinów dla tranzystorów
-const int mosfetPin = D4;      // Pin dla MOSFET IRFP460
-const int bjtPin1 = D5;        // Pin dla BJT MJE13009
-const int bjtPin2 = D6;        // Pin dla BJT 2SC5200
-const int bjtPin3 = D7;        // Pin dla BJT 2SA1943
+const int mosfetPin = D4;
+const int bjtPin1 = D5;
+const int bjtPin2 = D6;
+const int bjtPin3 = D7;
 
 // Definicje pinów dla dodatkowych tranzystorów sterujących cewkami wzbudzenia
 const int excitationBJT1Pin = D8;
 const int excitationBJT2Pin = D9;
 
 // Stałe konfiguracyjne
-float LOAD_THRESHOLD = 0.5; // Zmieniono na zmienną globalną
+float LOAD_THRESHOLD = 0.5;
 const float COMPENSATION_FACTOR = 0.1;
 const int MAX_EXCITATION_CURRENT = 255;
 const float MAX_VOLTAGE = 5.0;
@@ -57,14 +57,14 @@ const float discountFactor = 0.9;
 // * Cewki wzbudzenia: regulują natężenie pola magnetycznego, wpływając na napięcie generowane
 
 // Parametry automatycznej optymalizacji
-const unsigned long OPTIMIZATION_INTERVAL = 60000; // Optymalizacja co minutę
-const unsigned long TEST_DURATION = 10000; // Test nowych parametrów przez 10 sekund
+const unsigned long OPTIMIZATION_INTERVAL = 60000;
+const unsigned long TEST_DURATION = 10000;
 unsigned long lastOptimizationTime = 0;
 
 // Zmienne dla optymalizacji bayesowskiej
 BayesOptimizer optimizer;
-float params[3] = {0.1, 0.9, 0.1}; // Parametry do optymalizacji
-float bounds[3][2] = {{0.01, 0.5}, {0.8, 0.99}, {0.01, 0.3}}; // Zakresy wartości parametrów
+float params[3] = {0.1, 0.9, 0.1};
+float bounds[3][2] = {{0.01, 0.5}, {0.8, 0.99}, {0.01, 0.3}};
 float bestEfficiency = 0.0;
 
 // Stałe dane w pamięci flash (PROGMEM)
@@ -90,13 +90,13 @@ Adafruit_SH1106 display(128, 64, &Wire, -1);
 int lastAction = 0;
 
 // Tablica Q-learning
-float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3]; // 3 wyjścia dla prądów bazowych
+float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3];
 
 // Stałe dla minimalnych i maksymalnych wartości zmiennych stanu
-const float MIN_ERROR = -230.0; 
+const float MIN_ERROR = -230.0;
 const float MAX_ERROR = 230.0;
-const float MIN_LOAD = 0.0; 
-const float MAX_LOAD = LOAD_THRESHOLD * 2; 
+const float MIN_LOAD = 0.0;
+const float MAX_LOAD = LOAD_THRESHOLD * 2;
 const float MIN_KP = 0.0;
 const float MAX_KP = 5.0;
 const float MIN_KI = 0.0;
@@ -106,31 +106,26 @@ const float MAX_KD = 5.0;
 
 // Funkcja dyskretyzacji stanu
 int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
-    // Normalizacja zmiennych stanu do zakresu [0, 1]
     float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
     float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
     float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
     float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
     float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
 
-    // Dyskretyzacja znormalizowanych wartości na przedziały (kosze)
     int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
     int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
     int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
     int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
     int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
 
-    // Kombinacja koszy do jednego indeksu stanu
     return errorBin + NUM_STATE_BINS_ERROR * (loadBin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
 }
 
 // Funkcja wybierająca akcję na podstawie stanu
 int chooseAction(int state) {
     if (random(0, 100) < epsilon * 100) {
-        // Wybierz losową akcję
         return random(0, NUM_ACTIONS);
     } else {
-        // Wybierz najlepszą znaną akcję
         int bestAction = 0;
         float bestQValue = qTable[state][0][0];
         for (int a = 1; a < NUM_ACTIONS; a++) {
@@ -153,7 +148,6 @@ void executeAction(int action) {
             // Akcja 2
             break;
         case 2:
-            // Akcja 3: Sterowanie fazowe
             if (currentIn[0] > LOAD_THRESHOLD) {
                 digitalWrite(mosfetPin, HIGH);
             } else {
@@ -161,7 +155,6 @@ void executeAction(int action) {
             }
             break;
         case 3:
-            // Akcja 4: Adaptacyjne wzbudzenie
             float excitationAdjustment = map(currentIn[0], 0, MAX_EXCITATION_CURRENT, MIN_VOLTAGE, MAX_VOLTAGE);
             analogWrite(excitationBJT1Pin, excitationAdjustment);
             analogWrite(excitationBJT2Pin, excitationAdjustment);
@@ -174,7 +167,7 @@ void executeAction(int action) {
 // Funkcja obliczająca nagrodę
 float calculateReward(float error, float efficiency, float voltageDrop) {
     float reward = 1.0 / abs(error);
-    reward -= voltageDrop * 0.01;  // Kara za spadek napięcia
+    reward -= voltageDrop * 0.01;
     return reward;
 }
 
@@ -209,17 +202,15 @@ void monitorPerformanceAndAdjust() {
         float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
         float efficiencyPercent = efficiency * 100.0;
 
-        // Monitorowanie i logowanie wydajności
         advancedLogData(efficiencyPercent);
 
-        // Dynamiczne dostosowywanie sterowania tranzystorami w zależności od wydajności
         if (efficiencyPercent < 90.0) {
-            excitationGain += 0.1; // Zwiększenie wzbudzenia
+            excitationGain += 0.1;
         } else if (efficiencyPercent > 95.0) {
-            excitationGain -= 0.1; // Zmniejszenie wzbudzenia
+            excitationGain -= 0.1;
         }
 
-        excitationGain = constrain(excitationGain, 0.0, 1.0); // Ograniczenie wzbudzenia do zakresu 0-1
+        excitationGain = constrain(excitationGain, 0.0, 1.0);
 
         lastAdjustmentTime = millis();
     }
@@ -229,14 +220,12 @@ void monitorPerformanceAndAdjust() {
 void controlTransistors(float voltage, float excitationCurrent) {
     voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
 
-    // Dynamiczne dostosowywanie sterowania tranzystorami
     if (excitationCurrent > LOAD_THRESHOLD) {
         digitalWrite(mosfetPin, HIGH);
     } else {
         digitalWrite(mosfetPin, LOW);
     }
 
-    // Ustalenie prądów bazowych dla BJT w sposób adaptacyjny
     float baseCurrent1 = excitationCurrent * 0.3;
     float baseCurrent2 = excitationCurrent * 0.3;
     float baseCurrent3 = excitationCurrent * 0.4;
@@ -250,8 +239,8 @@ void controlTransistors(float voltage, float excitationCurrent) {
     analogWrite(bjtPin3, pwmValueBJT3);
 }
 
+// Funkcja monitorująca tranzystory
 void monitorTransistors() {
-    // Monitorowanie stanu tranzystorów
     const int tranzystorPins[3] = {bjtPin1, bjtPin2, bjtPin3};
     for (int i = 0; i < 3; i++) {
         int state = digitalRead(tranzystorPins[i]);
@@ -267,7 +256,7 @@ void monitorTransistors() {
     }
 }
 
-// Dodane definicje zmiennych
+// Funkcja regulująca częstotliwość sterowania
 int controlFrequency = 0;
 const int HIGH_FREQUENCY = 1000;
 const int LOW_FREQUENCY = 100;
@@ -284,6 +273,7 @@ void adjustControlFrequency() {
     }
 }
 
+// Funkcja logująca zaawansowane dane
 void advancedLogData(float efficiencyPercent) {
     Serial.print("Napięcie: ");
     Serial.print(voltageIn[0]);
@@ -299,6 +289,7 @@ void advancedLogData(float efficiencyPercent) {
     Serial.println(" W");
 }  
 
+// Funkcja wspinania się na wzniesienie do optymalizacji progu
 float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
     float currentScore = evaluate(currentThreshold);
     float bestThreshold = currentThreshold;
@@ -321,11 +312,10 @@ float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(floa
     return bestThreshold;
 }
 
+// Funkcja oceniająca próg
 float evaluateThreshold(float threshold) {
-    // Przypisz nowy próg przełączania faz wzbudzenia
     LOAD_THRESHOLD = threshold;
     
-    // Mierz wydajność
     float totalEfficiency = 0;
     unsigned long startTime = millis();
     while (millis() - startTime < TEST_DURATION) {
@@ -334,6 +324,7 @@ float evaluateThreshold(float threshold) {
     return totalEfficiency / (TEST_DURATION / 100);
 }
 
+// Funkcja setup
 void setup() {
     Serial.begin(115200);
 
@@ -358,14 +349,14 @@ void setup() {
     display.display();
 }
 
+// Funkcja odczytu sensorów
 void readSensors() {
-    // Implementacja odczytu sensorów
     voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
     // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
 }
 
+// Funkcja sprawdzania alarmów
 void checkAlarm() {
-    // Implementacja sprawdzania alarmów
     if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
         Serial.println("Alarm: Napięcie przekroczyło górny próg!");
     } else if (voltageIn[0] < VOLTAGE_SETPOINT - VOLTAGE_REGULATION_HYSTERESIS) {
@@ -373,16 +364,15 @@ void checkAlarm() {
     }
 }
 
+// Funkcja automatycznej kalibracji
 void autoCalibrate() {
-    // Implementacja automatycznej kalibracji
-    // Przykład: resetowanie zmiennych kontrolnych
     previousError = 0;
     integral = 0;
     Serial.println("Automatyczna kalibracja zakończona");
 }
 
+// Funkcja zarządzania energią
 void energyManagement() {
-    // Implementacja zarządzania energią
     if (currentIn[0] > LOAD_THRESHOLD) {
         analogWrite(excitationBJT1Pin, 255);
         analogWrite(excitationBJT2Pin, 255);
@@ -392,6 +382,7 @@ void energyManagement() {
     }
 }
 
+// Funkcja loop
 void loop() {
     server.handleClient();
 
@@ -415,6 +406,19 @@ void loop() {
     executeAction(action);
 
     delay(100); 
-    int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
+    int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
 
-    float reward = calculateReward(VOLTAGE_SET
+    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+    updateQ(state, lastAction, reward, newState); 
+    lastAction = action;
+
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
+
+        float newParams[3];
+        optimizer.suggestNextParameters(newParams);
+        params[0] = newParams[0];
+        params[1] = newParams[1];
+        params[2] = newParams[2];
+    }
+}
