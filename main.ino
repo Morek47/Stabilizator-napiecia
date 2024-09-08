@@ -18,7 +18,7 @@ const int excitationBJT1Pin = D8;
 const int excitationBJT2Pin = D9;
 
 // Stałe konfiguracyjne
-const float LOAD_THRESHOLD = 0.5;
+float LOAD_THRESHOLD = 0.5; // Zmieniono na zmienną globalną
 const float COMPENSATION_FACTOR = 0.1;
 const int MAX_EXCITATION_CURRENT = 255;
 const float MAX_VOLTAGE = 5.0;
@@ -267,6 +267,11 @@ void monitorTransistors() {
     }
 }
 
+// Dodane definicje zmiennych
+int controlFrequency = 0;
+const int HIGH_FREQUENCY = 1000;
+const int LOW_FREQUENCY = 100;
+
 void adjustControlFrequency() {
     static unsigned long lastAdjustmentTime = 0;
     if (millis() - lastAdjustmentTime > 1000) {
@@ -293,7 +298,8 @@ void advancedLogData(float efficiencyPercent) {
     Serial.print(power);
     Serial.println(" W");
 }  
- float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
+
+float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
     float currentScore = evaluate(currentThreshold);
     float bestThreshold = currentThreshold;
     float bestScore = currentScore;
@@ -351,7 +357,8 @@ void setup() {
     display.println(buffer);
     display.display();
 }
-  void loop() {
+
+void loop() {
     server.handleClient();
 
     readSensors();
@@ -386,75 +393,4 @@ void setup() {
         float newParams[3];
         optimizer.suggestNextParameters(newParams);
         params[0] = newParams[0];
-        params[1] = newParams[1];
-        params[2] = newParams[2];
-
-        float totalEfficiency = 0;
-        unsigned long startTime = millis();
-        while (millis() - startTime < TEST_DURATION) {
-            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-        }
-        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
-
-        optimizer.update(newParams, averageEfficiency);
-
-        if (averageEfficiency > bestEfficiency) {
-            bestEfficiency = averageEfficiency;
-            memcpy(params, newParams, sizeof(params));
-        }
-
-        EEPROM.put(0, lastOptimizationTime);
-
-        int qTableSize = sizeof(qTable);
-        for (int i = 0; i < qTableSize; i++) {
-            EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
-        }
-        EEPROM.commit(); 
-        Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
-        
-        // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
-        LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
-        Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
-        Serial.println(LOAD_THRESHOLD);
-    }
-
-    delay(100);
-    displayData(efficiencyPercent); 
-    adjustControlFrequency(); 
-    monitorTransistors(); 
-    monitorPerformanceAndAdjust(); // Monitorowanie wydajności i dostosowanie sterowania
-
-    Serial.print("Wolna pamięć: ");
-    Serial.println(freeMemory());
-}
-}
-
-void displayData(float efficiencyPercent) {
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.print("Napięcie: ");
-    display.print(voltageIn[0]);
-    display.println(" V");
-    display.print("Prąd: ");
-    display.print(currentIn[0]);
-    display.println(" A");
-    display.print("Wydajność: ");
-    display.print(efficiencyPercent);
-    display.println(" %");
-    display.display();
-}
-
-// Funkcje pomocnicze
-void readSensors() {
-    float adcToVoltageFactor = VOLTAGE_REFERENCE / ADC_MAX_VALUE;
-    float vccHalf = VOLTAGE_REFERENCE / 2.0;
-
-    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
-        digitalWrite(muxSelectPinA, sensor & 0x01); 
-        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); 
-
-        int sensorValue = analogRead(muxInputPin);
-
-        if (sensor < 2) {
-            float Sensitivity = 0.066; 
-            float sensorVoltage =
+        params
