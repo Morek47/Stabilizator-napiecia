@@ -484,3 +484,118 @@ float calculateRewardAgent3(float efficiency, float voltage, float generator_bra
     return reward;
 }
 
+void loop() {
+    // Bayesian optimization (at a certain interval)
+    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = millis();
+
+        float newParams[3];
+        optimizer.suggestNextParameters(newParams);
+        params[0] = newParams[0];
+        params[1] = newParams[1];
+        params[2] = newParams[2];
+
+        float totalEfficiency = 0;
+        unsigned long startTime = millis();
+        while (millis() - startTime < TEST_DURATION) {
+            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        }
+        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+
+        optimizer.update(newParams, averageEfficiency);
+
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            memcpy(params, newParams, sizeof(params));
+        }
+
+        // Write to EEPROM only if the best efficiency has changed
+        if (averageEfficiency > bestEfficiency) {
+            EEPROM.put(0, lastOptimizationTime);
+
+            int qTableSize = sizeof(qTable);
+            for (int i = 0; i < qTableSize; i++) {
+                EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
+            }
+            EEPROM.commit();
+            Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
+        }
+
+        // Hill Climbing optimization of excitation phase switching threshold
+        LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+        Serial.print("Updated excitation phase switching threshold: ");
+        Serial.println(LOAD_THRESHOLD);
+    }
+
+    // Delay
+    delay(100);
+
+    // Display data on the screen
+    displayData(efficiencyPercent);
+
+    // Adjust control frequency
+    adjustControlFrequency();
+
+    // Monitor transistors
+    monitorTransistors();
+
+    // Monitor performance and adjust control
+    monitorPerformanceAndAdjust();
+
+    // Display free memory info
+    Serial.print("Free memory: ");
+    Serial.println(freeMemory());
+
+    // Communication with the computer
+    Serial.print(voltageIn[0]);
+    Serial.print(",");
+    Serial.print(currentIn[0]);
+    Serial.print(",");
+    Serial.print(externalVoltage);
+    Serial.print(",");
+    Serial.println(externalCurrent);
+
+    // Wait for results from the computer
+    while (Serial.available() == 0) {}
+
+    // Read results from the computer
+    efficiency = Serial.parseFloat();
+    efficiencyPercent = efficiency * 100.0;
+    voltageDrop = Serial.parseFloat();
+
+    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+    efficiencyPercent = efficiency * 100.0;
+    voltageDrop = voltageIn[1] - voltageIn[0];
+
+    advancedLogData(efficiencyPercent);
+    checkAlarm();
+    autoCalibrate();
+    energyManagement();
+
+    // Q-learning 1 (voltage stabilizer)
+    int state1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+    int action1 = chooseAction(state1);
+    executeAction(action1);
+    float reward1 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+    int nextState1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+    updateQ(state1, action1, reward1, nextState1);
+
+    // Q-learning 2 (excitation coils)
+    int state2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+    int action2 = chooseAction(state2);
+    executeAction(action2);
+    float reward2 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+    int nextState2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+    updateQ(state2, action2, reward2, nextState2);
+
+    // Q-learning 3 (generator braking)
+    int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
+    int action3 = chooseActionAgent3(state3);
+    executeActionAgent3(action3);
+    float reward3 = calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop); // Assuming voltageDrop represents generator braking
+    int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
+    updateQAgent3(state3, action3, reward3, nextState3);
+}
