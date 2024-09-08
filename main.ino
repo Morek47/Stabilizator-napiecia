@@ -358,6 +358,40 @@ void setup() {
     display.display();
 }
 
+void readSensors() {
+    // Implementacja odczytu sensorów
+    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
+}
+
+void checkAlarm() {
+    // Implementacja sprawdzania alarmów
+    if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
+        Serial.println("Alarm: Napięcie przekroczyło górny próg!");
+    } else if (voltageIn[0] < VOLTAGE_SETPOINT - VOLTAGE_REGULATION_HYSTERESIS) {
+        Serial.println("Alarm: Napięcie spadło poniżej dolnego progu!");
+    }
+}
+
+void autoCalibrate() {
+    // Implementacja automatycznej kalibracji
+    // Przykład: resetowanie zmiennych kontrolnych
+    previousError = 0;
+    integral = 0;
+    Serial.println("Automatyczna kalibracja zakończona");
+}
+
+void energyManagement() {
+    // Implementacja zarządzania energią
+    if (currentIn[0] > LOAD_THRESHOLD) {
+        analogWrite(excitationBJT1Pin, 255);
+        analogWrite(excitationBJT2Pin, 255);
+    } else {
+        analogWrite(excitationBJT1Pin, 0);
+        analogWrite(excitationBJT2Pin, 0);
+    }
+}
+
 void loop() {
     server.handleClient();
 
@@ -383,14 +417,4 @@ void loop() {
     delay(100); 
     int newState = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
 
-    float reward = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    updateQ(state, lastAction, reward, newState); 
-    lastAction = action;
-
-    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = millis();
-
-        float newParams[3];
-        optimizer.suggestNextParameters(newParams);
-        params[0] = newParams[0];
-        params
+    float reward = calculateReward(VOLTAGE_SET
