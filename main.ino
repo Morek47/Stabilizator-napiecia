@@ -46,7 +46,7 @@ const int NUM_STATE_BINS_KP = 5;
 const int NUM_STATE_BINS_KI = 3;
 const int NUM_STATE_BINS_KD = 3;
 
-const int NUM_ACTIONS = 4;
+const int NUM_ACTIONS = 6; // Zwiększono liczbę akcji na 6
 const float epsilon = 0.1;
 const float learningRate = 0.1;
 const float discountFactor = 0.9;
@@ -141,22 +141,22 @@ int chooseAction(int state) {
 void executeAction(int action) {
     switch (action) {
         case 0:
-            // Akcja 1
+            analogWrite(bjtPin1, constrain(analogRead(bjtPin1) + PWM_INCREMENT, 0, 255));
             break;
         case 1:
-            // Akcja 2
+            analogWrite(bjtPin1, constrain(analogRead(bjtPin1) - PWM_INCREMENT, 0, 255));
             break;
         case 2:
-            if (currentIn[0] > LOAD_THRESHOLD) {
-                digitalWrite(mosfetPin, HIGH);
-            } else {
-                digitalWrite(mosfetPin, LOW);
-            }
+            analogWrite(bjtPin2, constrain(analogRead(bjtPin2) + PWM_INCREMENT, 0, 255));
             break;
         case 3:
-            float excitationAdjustment = map(currentIn[0], 0, MAX_EXCITATION_CURRENT, MIN_VOLTAGE, MAX_VOLTAGE);
-            analogWrite(excitationBJT1Pin, excitationAdjustment);
-            analogWrite(excitationBJT2Pin, excitationAdjustment);
+            analogWrite(bjtPin2, constrain(analogRead(bjtPin2) - PWM_INCREMENT, 0, 255));
+            break;
+        case 4:
+            analogWrite(bjtPin3, constrain(analogRead(bjtPin3) + PWM_INCREMENT, 0, 255));
+            break;
+        case 5:
+            analogWrite(bjtPin3, constrain(analogRead(bjtPin3) - PWM_INCREMENT, 0, 255));
             break;
         default:
             break;
