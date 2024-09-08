@@ -389,130 +389,157 @@ void displayData(float efficiencyPercent) {
     display.println(" %");
     display.display();
 }
+ void loop() {
+  // ... (kod z początku funkcji loop)
 
-void loop() {
-    // Odczyt danych z sensorów
-    readSensors();
+  // Optymalizacja bayesowska (co określony interwał czasu)
+  if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+      lastOptimizationTime = millis();
 
-    // Odczyt napięcia i prądu z zewnętrznych czujników
-    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+      float newParams[3];
+      optimizer.suggestNextParameters(newParams);
+      params[0] = newParams[0];
+      params[1] = newParams[1];
+      params[2] = newParams[2];
 
-    // Obliczenie wydajności
-    float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-    float efficiencyPercent = efficiency * 100.0;
+      float totalEfficiency = 0;
+      unsigned long startTime = millis();
+      while (millis() - startTime < TEST_DURATION) {
+          totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+      }
+      float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
 
-    // Obliczenie spadku napięcia
-    float voltageDrop = voltageIn[1] - voltageIn[0];
+      optimizer.update(newParams, averageEfficiency);
 
-    // Logowanie zaawansowanych danych
-    advancedLogData(efficiencyPercent);
+      if (averageEfficiency > bestEfficiency) {
+          bestEfficiency = averageEfficiency;
+          memcpy(params, newParams, sizeof(params));
+      }
 
-    // Sprawdzenie alarmów
-    checkAlarm();
+      // Zapis do EEPROM tylko jeśli zmieniła się najlepsza wydajność
+      if (averageEfficiency > bestEfficiency) {
+          EEPROM.put(0, lastOptimizationTime);
 
-    // Automatyczna kalibracja
-    autoCalibrate();
+          int qTableSize = sizeof(qTable); 
+          for (int i = 0; i < qTableSize; i++) {
+              EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
+          }
+          EEPROM.commit(); 
+          Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
+      }
 
-    // Zarządzanie energią
-    energyManagement();
+      // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
+      LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+      Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
+      Serial.println(LOAD_THRESHOLD);
+  } // <-- Klamra zamykająca blok `if`
 
-    // Q-learning 1 (stabilizator napięcia)
-    int state1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
-    int action1 = chooseAction(state1);
-    executeAction(action1); 
-    float reward1 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    int nextState1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    updateQ(state1, action1, reward1, nextState1);
+  // Opóźnienie
+  delay(100);
 
-    // Q-learning 2 (cewki wzbudzenia)
-    int state2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd); 
-    int action2 = chooseAction(state2);
-    executeAction(action2); 
-    float reward2 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    int nextState2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    updateQ(state2, action2, reward2, nextState2);
+  // Wyświetlanie danych na ekranie
+  displayData(efficiencyPercent); 
 
-    // Optymalizacja bayesowska (co określony interwał czasu)
-    if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = millis();
+  // Dostosowanie częstotliwości sterowania
+  adjustControlFrequency(); 
 
-        float newParams[3];
-        optimizer.suggestNextParameters(newParams);
-        params[0] = newParams[0];
-        params[1] = newParams[1];
-        params[2] = newParams[2];
+  // Monitorowanie tranzystorów
+  monitorTransistors(); 
 
-        float totalEfficiency = 0;
-        unsigned long startTime = millis();
-        while (millis() - startTime < TEST_DURATION) {
-            totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-        }
-        float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
+  // Monitorowanie wydajności i dostosowanie sterowania
+  monitorPerformanceAndAdjust(); 
 
-        optimizer.update(newParams, averageEfficiency);
+  // Wyświetlanie informacji o wolnej pamięci
+  Serial.print("Wolna pamięć: ");
+  Serial.println(freeMemory()); 
 
-        if (averageEfficiency > bestEfficiency) {
-            bestEfficiency = averageEfficiency;
-            memcpy(params, newParams, sizeof(params));
-        }
+  // Komunikacja z komputerem
+  Serial.print(voltageIn[0]);
+  Serial.print(",");
+  Serial.print(currentIn[0]);
+  Serial.print(",");
+  Serial.print(externalVoltage);
+  Serial.print(",");
+  Serial.println(externalCurrent);
 
-        // Zapis do EEPROM tylko jeśli zmieniła się najlepsza wydajność
-        if (averageEfficiency > bestEfficiency) {
-            EEPROM.put(0, lastOptimizationTime);
+  // Czekanie na wyniki od komputera
+  while (Serial.available() == 0) {}
 
-            int qTableSize = sizeof(qTable); 
-            for (int i = 0; i < qTableSize; i++) {
-                EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
-            }
-            EEPROM.commit(); 
-            Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
-        }
+  // Odczyt wyników z komputera
+  efficiency = Serial.parseFloat();
+  efficiencyPercent = efficiency * 100.0;
+  voltageDrop = Serial.parseFloat();
 
-        // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
-        LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
-        Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
-        Serial.println(LOAD_THRESHOLD);
-    }
+  float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+  float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
-    // Opóźnienie
-    delay(100);
+  efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+  efficiencyPercent = efficiency * 100.0;
+  voltageDrop = voltageIn[1] - voltageIn[0];
 
-    // Wyświetlanie danych na ekranie
-    displayData(efficiencyPercent); 
+  advancedLogData(efficiencyPercent);
+  checkAlarm();
+  autoCalibrate();
+  energyManagement();
 
-    // Dostosowanie częstotliwości sterowania
-    adjustControlFrequency(); 
+  // Q-learning 1 (stabilizator napięcia)
+  int state1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+  int action1 = chooseAction(state1);
+  executeAction(action1);
+  float reward1 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+  int nextState1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+  updateQ(state1, action1, reward1, nextState1);
 
-    // Monitorowanie tranzystorów
-    monitorTransistors(); 
+  // Q-learning 2 (cewki wzbudzenia)
+  int state2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+  int action2 = chooseAction(state2);
+  executeAction(action2);
+  float reward2 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
+  int nextState2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
+  updateQ(state2, action2, reward2, nextState2);
 
-    // Monitorowanie wydajności i dostosowanie sterowania
-    monitorPerformanceAndAdjust(); 
+  // Optymalizacja bayesowska (co określony interwał czasu)
+  if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+      lastOptimizationTime = millis();
 
-    // Wyświetlanie informacji o wolnej pamięci
-    Serial.print("Wolna pamięć: ");
-    Serial.println(freeMemory()); 
+      float newParams[3];
+      optimizer.suggestNextParameters(newParams);
+      params[0] = newParams[0];
+      params[1] = newParams[1];
+      params[2] = newParams[2];
 
-    // Komunikacja z komputerem
-    Serial.print(voltageIn[0]);
-    Serial.print(",");
-    Serial.print(currentIn[0]);
-    Serial.print(",");
-    Serial.print(externalVoltage);
-    Serial.print(",");
-    Serial.println(externalCurrent);
+      float totalEfficiency = 0;
+      unsigned long startTime = millis();
+      while (millis() - startTime < TEST_DURATION) {
+          totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+      }
+      float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
 
-    // Czekanie na wyniki od komputera
-    while (Serial.available() == 0) {}
+      optimizer.update(newParams, averageEfficiency);
 
-    // Odczyt wyników z komputera
-    efficiency = Serial.parseFloat();
-    efficiencyPercent = efficiency * 100.0;
-    voltageDrop = Serial.parseFloat();
-}
+      if (averageEfficiency > bestEfficiency) {
+          bestEfficiency = averageEfficiency;
+          memcpy(params, newParams, sizeof(params));
+      }
 
-    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+      // Zapis do EEPROM tylko jeśli zmieniła się najlepsza wydajność
+      if (averageEfficiency > bestEfficiency) {
+          EEPROM.put(0, lastOptimizationTime);
+
+          int qTableSize = sizeof(qTable); 
+          for (int i = 0; i < qTableSize; i++) {
+              EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
+          }
+          EEPROM.commit(); 
+          Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
+      }
+
+      // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
+      LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+      Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
+      Serial.println(LOAD_THRESHOLD);
+  } 
+} // <-- Poprawne umieszczenie klamry zamykającej funkcję `loop()` float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
     float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
     float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
