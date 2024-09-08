@@ -293,8 +293,7 @@ void advancedLogData(float efficiencyPercent) {
     Serial.print(power);
     Serial.println(" W");
 }  
-
-float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
+ float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
     float currentScore = evaluate(currentThreshold);
     float bestThreshold = currentThreshold;
     float bestScore = currentScore;
@@ -352,8 +351,7 @@ void setup() {
     display.println(buffer);
     display.display();
 }
-
-void loop() {
+  void loop() {
     server.handleClient();
 
     readSensors();
@@ -414,4 +412,49 @@ void loop() {
         EEPROM.commit(); 
         Serial.println("Zapisano tablicę Q-learning i lastOptimizationTime do EEPROM.");
         
-        // Wywoł
+        // Wywołanie Hill Climbing do optymalizacji progu przełączania faz wzbudzenia
+        LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+        Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
+        Serial.println(LOAD_THRESHOLD);
+    }
+
+    delay(100);
+    displayData(efficiencyPercent); 
+    adjustControlFrequency(); 
+    monitorTransistors(); 
+    monitorPerformanceAndAdjust(); // Monitorowanie wydajności i dostosowanie sterowania
+
+    Serial.print("Wolna pamięć: ");
+    Serial.println(freeMemory());
+}
+}
+
+void displayData(float efficiencyPercent) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("Napięcie: ");
+    display.print(voltageIn[0]);
+    display.println(" V");
+    display.print("Prąd: ");
+    display.print(currentIn[0]);
+    display.println(" A");
+    display.print("Wydajność: ");
+    display.print(efficiencyPercent);
+    display.println(" %");
+    display.display();
+}
+
+// Funkcje pomocnicze
+void readSensors() {
+    float adcToVoltageFactor = VOLTAGE_REFERENCE / ADC_MAX_VALUE;
+    float vccHalf = VOLTAGE_REFERENCE / 2.0;
+
+    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+        digitalWrite(muxSelectPinA, sensor & 0x01); 
+        digitalWrite(muxSelectPinB, (sensor >> 1) & 0x01); 
+
+        int sensorValue = analogRead(muxInputPin);
+
+        if (sensor < 2) {
+            float Sensitivity = 0.066; 
+            float sensorVoltage =
