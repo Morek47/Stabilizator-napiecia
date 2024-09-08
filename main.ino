@@ -14,6 +14,8 @@ const int bjtPin2 = D6;
 const int bjtPin3 = D7;
 const int excitationBJT1Pin = D8;
 const int excitationBJT2Pin = D9;
+const int PIN_EXTERNAL_VOLTAGE_SENSOR_1 = A1; // Dodaj definicje brakujących pinów
+const int PIN_EXTERNAL_CURRENT_SENSOR_1 = A2; // Dodaj definicje brakujących pinów
 
 // Stałe konfiguracyjne
 float LOAD_THRESHOLD = 0.5;
@@ -77,6 +79,11 @@ const float VOLTAGE_REGULATION_HYSTERESIS = 0.1;
 // Zmienne globalne
 float voltageIn[2] = {0};
 float currentIn[2] = {0};
+float externalVoltage = 0.0; // Upewnij się, że zmienne są zdefiniowane
+float externalCurrent = 0.0;
+float efficiency = 0.0;
+float efficiencyPercent = 0.0;
+float voltageDrop = 0.0;
 ESP8266WebServer server(80);
 Adafruit_SH1106 display(128, 64, &Wire, -1);
 int lastAction = 0;
@@ -434,30 +441,3 @@ void loop() {
       LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
       Serial.print("Zaktualizowano próg przełączania faz wzbudzenia: ");
       Serial.println(LOAD_THRESHOLD);
-  }
-
-  // Opóźnienie
-  delay(100);
-
-  // Wyświetlanie danych na ekranie
-  displayData(efficiencyPercent); 
-
-  // Dostosowanie częstotliwości sterowania
-  adjustControlFrequency(); 
-
-  // Monitorowanie tranzystorów
-  monitorTransistors(); 
-
-  // Monitorowanie wydajności i dostosowanie sterowania
-  monitorPerformanceAndAdjust(); 
-
-  // Wyświetlanie informacji o wolnej pamięci
-  Serial.print("Wolna pamięć: ");
-  Serial.println(freeMemory()); 
-
-  // Komunikacja z komputerem
-  Serial.print(voltageIn[0]);
-  Serial.print(",");
-  Serial.print(currentIn[0]);
-  Serial.print(",");
-  Serial.print(ex
