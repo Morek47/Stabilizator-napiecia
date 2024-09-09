@@ -47,7 +47,7 @@ const int NUM_STATE_BINS_KI = 3;
 const int NUM_STATE_BINS_KD = 3;
 
 const int NUM_ACTIONS = 6; // Zwiększono liczbę akcji na 6
-const float epsilon = 0.1;
+const float epsilon = 0.3;
 const float learningRate = 0.1;
 const float discountFactor = 0.9;
 
