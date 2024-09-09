@@ -489,7 +489,7 @@ void loop() {
     handleSerialCommands();
 
     // Testowanie różnych wartości epsilon, learningRate i discountFactor
-    float testEpsilon = 0.2;
+    float testEpsilon = 0.3;
     float testLearningRate = 0.05;
     float testDiscountFactor = 0.95;
 
