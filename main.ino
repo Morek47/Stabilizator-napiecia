@@ -499,24 +499,6 @@ int chooseActionAgent3(int state) {
     }
 }
 
-// Function to calculate reward for Agent 3 - funkcja oblicza nagrodę na podstawie wydajności, napięcia, hamowania generatora i mocy wyjściowej
-float calculateRewardAgent3(float efficiency, float voltage, float generator_braking, float power_output) {
-    const float MIN_EFFICIENCY = 0.8; // Minimalna akceptowalna wydajność
-
-    float reward = power_output; // Nagroda bazowa to moc wyjściowa
-
-    // Kara za duże wahania napięcia
-    if (abs(voltage - VOLTAGE_SETPOINT) > VOLTAGE_TOLERANCE) {
-        reward -= abs(voltage - VOLTAGE_SETPOINT) - VOLTAGE_TOLERANCE;
-    }
-
-    // Kara za spadek wydajności poniżej minimalnego progu
-    if (efficiency < MIN_EFFICIENCY) {
-        reward -= (MIN_EFFICIENCY - efficiency) * 10; 
-    }
-
-    return reward;
-}
 
 // Function to execute action for Agent 3 - funkcja wykonuje akcję na podstawie jej numeru
 void executeActionAgent3(int action) {
@@ -541,6 +523,31 @@ void executeActionAgent3(int action) {
     }
 }
 
+// Function to calculate reward for Agent 3 - funkcja oblicza nagrodę na podstawie wydajności, napięcia, hamowania generatora i mocy wyjściowej
+float calculateRewardAgent3(float efficiency, float voltage, float voltage_drop, float power_output) { // Zmieniono nazwę argumentu na voltage_drop
+    const float MIN_EFFICIENCY = 0.8; // Minimalna akceptowalna wydajność
+    const float MAX_VOLTAGE_DROP = 1.0; // Maksymalny akceptowalny spadek napięcia (dostosuj według potrzeb)
+
+    float reward = power_output; // Nagroda bazowa to moc wyjściowa
+
+    // Kara za duże wahania napięcia
+    float voltage_deviation = abs(voltage - VOLTAGE_SETPOINT);
+    if (voltage_deviation > VOLTAGE_TOLERANCE) {
+        reward -= voltage_deviation - VOLTAGE_TOLERANCE; 
+    }
+
+    // Kara za spadek wydajności poniżej minimalnego progu
+    if (efficiency < MIN_EFFICIENCY) {
+        reward -= (MIN_EFFICIENCY - efficiency) * 10; 
+    }
+
+    // Kara za duży spadek napięcia (hamowanie generatora)
+    if (voltage_drop > MAX_VOLTAGE_DROP) {
+        reward -= (voltage_drop - MAX_VOLTAGE_DROP) * 20; // Dostosuj wagę kary według potrzeb
+    }
+
+    return reward;
+}
 // Function to update Q-value for Agent 3 - funkcja aktualizuje tablicę Q na podstawie stanu, akcji, nagrody i następnego stanu
 void updateQAgent3(int state, int action, float reward, int nextState) {
     float maxQNextState = qTableAgent3[nextState][0];
