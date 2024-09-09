@@ -490,7 +490,7 @@ void loop() {
 
     // Testowanie różnych wartości epsilon, learningRate i discountFactor
     float testEpsilon = 0.3;
-    float testLearningRate = 0.05;
+    float testLearningRate = 0.01;
     float testDiscountFactor = 0.95;
 
     // Przypisz testowe wartości do używanych zmiennych
