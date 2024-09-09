@@ -612,27 +612,7 @@ void loop() {
 
         optimizer.update(newParams, averageEfficiency);
 
-if (averageEfficiency > bestEfficiency) {
-    bestEfficiency = averageEfficiency;
-    memcpy(params, suggestedParams, sizeof(params));
 
-    // Jeśli znaleziono lepszą wydajność, zapisz zaktualizowaną tablicę Q-learning 
-    // i czas ostatniej optymalizacji do EEPROM
-    EEPROM.put(0, lastOptimizationTime);
-
-    int qTableSize = sizeof(qTable); // Pobranie rozmiaru tablicy Q-learning w bajtach
-    for (int i = 0; i < qTableSize; i++) {
-        // Konwersja tablicy Q-learning na ciąg bajtów i zapis do EEPROM
-        EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
-    }
-
-    // Sprawdzenie, czy zapis do EEPROM się powiódł
-    if (EEPROM.commit()) {
-        Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
-    } else {
-        Serial.println("Error saving data to EEPROM!");
-    }
-}
 
 // Hill Climbing optimization of excitation phase switching threshold
 LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
@@ -666,6 +646,41 @@ delay(100);
     Serial.print(",");
     Serial.println(externalCurrent);
 
+if (averageEfficiency > bestEfficiency) {
+    bestEfficiency = averageEfficiency;
+    memcpy(params, suggestedParams, sizeof(params));
+
+    // Zapisujemy czas ostatniej optymalizacji
+    if (!EEPROM.put(0, lastOptimizationTime)) {
+        Serial.println("Error saving lastOptimizationTime to EEPROM!"); 
+        return; // Przerywamy dalsze wykonywanie w przypadku błędu
+    }
+
+    // Zapisujemy tablicę Q-learning, sprawdzając każdy bajt
+    int qTableSize = sizeof(qTable);
+    for (int i = 0; i < qTableSize; i++) {
+        // Używamy EEPROM.update(), aby zapisywać tylko zmienione bajty
+        if (EEPROM.update(i + Q_TABLE_START_ADDRESS, ((byte*)qTable)[i])) {
+            // Możemy dodać tutaj opcjonalne informacje o postępie zapisu, 
+            // np. co 10% zapisanych danych
+            if (i % (qTableSize / 10) == 0) {
+                Serial.print("."); 
+            }
+        } else {
+            Serial.print("Error saving Q-table to EEPROM at address ");
+            Serial.println(i + Q_TABLE_START_ADDRESS);
+            return; // Przerywamy dalsze wykonywanie w przypadku błędu
+        }
+    }
+
+    // Zatwierdzamy zmiany w EEPROM
+    if (!EEPROM.commit()) {
+        Serial.println("Error committing changes to EEPROM!");
+        return; // Przerywamy dalsze wykonywanie w przypadku błędu
+    }
+
+    Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
+}
     // Wait for results from the computer
     while (Serial.available() == 0) {}
 
