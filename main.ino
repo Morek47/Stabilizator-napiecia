@@ -485,6 +485,19 @@ float calculateRewardAgent3(float efficiency, float voltage, float generator_bra
 }
 
 void loop() {
+    // Handle serial commands
+    handleSerialCommands();
+
+    // Testowanie różnych wartości epsilon, learningRate i discountFactor
+    float testEpsilon = 0.2;
+    float testLearningRate = 0.05;
+    float testDiscountFactor = 0.95;
+
+    // Przypisz testowe wartości do używanych zmiennych
+    epsilon = testEpsilon;
+    learningRate = testLearningRate;
+    discountFactor = testDiscountFactor;
+
     // Bayesian optimization (at a certain interval)
     if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
         lastOptimizationTime = millis();
@@ -563,8 +576,9 @@ void loop() {
     efficiencyPercent = efficiency * 100.0;
     voltageDrop = Serial.parseFloat();
 
-    float externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    float externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    // Read sensor data again
+    externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
     efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
     efficiencyPercent = efficiency * 100.0;
