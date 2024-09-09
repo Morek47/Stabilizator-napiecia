@@ -459,36 +459,7 @@ void executeActionAgent3(int action) {
     }
 }
 
-// Function to update Q-table for Agent 3
-void updateQAgent3(int state, int action, float reward, int nextState) {
-    float maxQNextState = qTableAgent3[nextState][0];
-    for (int a = 1; a < NUM_ACTIONS_AGENT3; a++) {
-        if (qTableAgent3[nextState][a] > maxQNextState) {
-            maxQNextState = qTableAgent3[nextState][a];
-        }
-    }
-    qTableAgent3[state][action] += learningRate * (reward + discountFactor * maxQNextState - qTableAgent3[state][action]);
-}
-
-// Function to calculate reward for Agent 3
-float calculateRewardAgent3(float efficiency, float voltage, float generator_braking) {
-    const float VOLTAGE_TOLERANCE = 0.1; // Dopuszczalne odchylenie napięcia
-    const float MAX_GENERATOR_BRAKING = 1.0; // Maksymalny dopuszczalny poziom hamowania prądnicy
-
-    float reward = efficiency; // Nagroda bazowa to wydajność
-
-    // Kara za duże wahania napięcia
-    if (abs(voltage - VOLTAGE_SETPOINT) > VOLTAGE_TOLERANCE) {
-        reward -= abs(voltage - VOLTAGE_SETPOINT) - VOLTAGE_TOLERANCE;
-    }
-
-    // Kara za nadmierne hamowanie prądnicy
-    if (generator_braking > MAX_GENERATOR_BRAKING) {
-        reward -= generator_braking - MAX_GENERATOR_BRAKING;
-    }
-
-    return reward;
-}
+morek
 
 void loop() {
     // Handle serial commands
