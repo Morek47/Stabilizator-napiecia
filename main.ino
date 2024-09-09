@@ -612,15 +612,53 @@ void loop() {
 
         optimizer.update(newParams, averageEfficiency);
 
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            memcpy(params, suggestedParams, sizeof(params));
 
+            // Stała dla adresu początku tablicy Q
+            const int Q_TABLE_START_ADDRESS = sizeof(lastOptimizationTime);
 
-// Hill Climbing optimization of excitation phase switching threshold
-LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
-Serial.print("Updated excitation phase switching threshold: ");
-Serial.println(LOAD_THRESHOLD);
+            // Zapisujemy czas ostatniej optymalizacji
+            if (!EEPROM.put(0, lastOptimizationTime)) {
+                Serial.println("Error saving lastOptimizationTime to EEPROM!"); 
+                return; // Przerywamy dalsze wykonywanie w przypadku błędu
+            }
 
-// Delay
-delay(100);
+            // Zapisujemy tablicę Q-learning, sprawdzając każdy bajt
+            int qTableSize = sizeof(qTable);
+            for (int i = 0; i < qTableSize; i++) {
+                // Używamy EEPROM.update(), aby zapisywać tylko zmienione bajty
+                if (EEPROM.update(i + Q_TABLE_START_ADDRESS, ((byte*)qTable)[i])) {
+                    // Możemy dodać tutaj opcjonalne informacje o postępie zapisu, 
+                    // np. co 10% zapisanych danych
+                    if (i % (qTableSize / 10) == 0) {
+                        Serial.print("."); 
+                    }
+                } else {
+                    Serial.print("Error saving Q-table to EEPROM at address ");
+                    Serial.println(i + Q_TABLE_START_ADDRESS);
+                    return; // Przerywamy dalsze wykonywanie w przypadku błędu
+                }
+            }
+
+            // Zatwierdzamy zmiany w EEPROM
+            if (!EEPROM.commit()) {
+                Serial.println("Error committing changes to EEPROM!");
+                return; // Przerywamy dalsze wykonywanie w przypadku błędu
+            }
+
+            Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
+        }
+    }
+
+    // Hill Climbing optimization of excitation phase switching threshold
+    LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+    Serial.print("Updated excitation phase switching threshold: ");
+    Serial.println(LOAD_THRESHOLD);
+
+    // Delay
+    delay(100);
     // Display data on the screen
     displayData(efficiencyPercent);
 
@@ -646,41 +684,6 @@ delay(100);
     Serial.print(",");
     Serial.println(externalCurrent);
 
-if (averageEfficiency > bestEfficiency) {
-    bestEfficiency = averageEfficiency;
-    memcpy(params, suggestedParams, sizeof(params));
-
-    // Zapisujemy czas ostatniej optymalizacji
-    if (!EEPROM.put(0, lastOptimizationTime)) {
-        Serial.println("Error saving lastOptimizationTime to EEPROM!"); 
-        return; // Przerywamy dalsze wykonywanie w przypadku błędu
-    }
-
-    // Zapisujemy tablicę Q-learning, sprawdzając każdy bajt
-    int qTableSize = sizeof(qTable);
-    for (int i = 0; i < qTableSize; i++) {
-        // Używamy EEPROM.update(), aby zapisywać tylko zmienione bajty
-        if (EEPROM.update(i + Q_TABLE_START_ADDRESS, ((byte*)qTable)[i])) {
-            // Możemy dodać tutaj opcjonalne informacje o postępie zapisu, 
-            // np. co 10% zapisanych danych
-            if (i % (qTableSize / 10) == 0) {
-                Serial.print("."); 
-            }
-        } else {
-            Serial.print("Error saving Q-table to EEPROM at address ");
-            Serial.println(i + Q_TABLE_START_ADDRESS);
-            return; // Przerywamy dalsze wykonywanie w przypadku błędu
-        }
-    }
-
-    // Zatwierdzamy zmiany w EEPROM
-    if (!EEPROM.commit()) {
-        Serial.println("Error committing changes to EEPROM!");
-        return; // Przerywamy dalsze wykonywanie w przypadku błędu
-    }
-
-    Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
-}
     // Wait for results from the computer
     while (Serial.available() == 0) {}
 
@@ -719,13 +722,14 @@ if (averageEfficiency > bestEfficiency) {
     updateQ(state2, action2, reward2, nextState2);
 
     // Q-learning 3 (generator braking)
-float power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
-int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
-int action3 = chooseActionAgent3(state3);
-executeActionAgent3(action3);
+    float power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
+    int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
+    int action3 = chooseActionAgent3(state3);
+    executeActionAgent3(action3);
 
-// Przekazujemy wszystkie 4 argumenty do funkcji calculateRewardAgent3
-float reward3 = calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop, power_output); 
+    // Przekazujemy wszystkie 4 argumenty do funkcji calculateRewardAgent3
+    float reward3 = calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop, power_output); 
 
-int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
-updateQAgent3(state3, action3, reward3, nextState3);
+    int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
+    updateQAgent3(state3, action3, reward3, nextState3);
+}
