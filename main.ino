@@ -459,7 +459,80 @@ void executeActionAgent3(int action) {
     }
 }
 
-morek
+// Define constants for Agent 3
+const int NUM_STATES_AGENT3 = 10; // Adjust as needed
+const int NUM_ACTIONS_AGENT3 = 5; // Adjust as needed
+const float VOLTAGE_TOLERANCE = 0.5; // Adjust as needed (zwiększona tolerancja)
+
+// Q-table for Agent 3
+float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3];
+
+// Function to discretize state for Agent 3
+int discretizeStateAgent3(float error, float generatorLoad) {
+    int errorBin = constrain((int)((error + MAX_ERROR) / (2 * MAX_ERROR) * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
+    int loadBin = constrain((int)((generatorLoad / MAX_LOAD) * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
+    return errorBin * NUM_STATES_AGENT3 + loadBin;
+}
+
+// Function to choose action for Agent 3
+int chooseActionAgent3(int state) {
+    if (random(0, 100) < epsilon * 100) {
+        return random(0, NUM_ACTIONS_AGENT3);
+    } else {
+        int bestAction = 0;
+        float bestQValue = qTableAgent3[state][0];
+        for (int a = 1; a < NUM_ACTIONS_AGENT3; a++) {
+            if (qTableAgent3[state][a] > bestQValue) {
+                bestAction = a;
+                bestQValue = qTableAgent3[state][a];
+            }
+        }
+        return bestAction;
+    }
+}
+
+// Function to calculate reward for Agent 3
+float calculateRewardAgent3(float efficiency, float voltage, float generator_braking, float power_output) {
+    const float MIN_EFFICIENCY = 0.8; // Minimalna akceptowalna wydajność
+
+    float reward = power_output; // Nagroda bazowa to moc wyjściowa
+
+    // Kara za duże wahania napięcia
+    if (abs(voltage - VOLTAGE_SETPOINT) > VOLTAGE_TOLERANCE) {
+        reward -= abs(voltage - VOLTAGE_SETPOINT) - VOLTAGE_TOLERANCE;
+    }
+
+    // Kara za spadek wydajności poniżej minimalnego progu
+    if (efficiency < MIN_EFFICIENCY) {
+        reward -= (MIN_EFFICIENCY - efficiency) * 10; 
+    }
+
+    return reward;
+}
+
+// Function to execute action for Agent 3
+void executeActionAgent3(int action) {
+    switch (action) {
+        case 0:
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + PWM_INCREMENT, 0, 255));
+            break;
+        case 1:
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - PWM_INCREMENT, 0, 255));
+            break;
+        case 2:
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + PWM_INCREMENT, 0, 255));
+            break;
+        case 3:
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) - PWM_INCREMENT, 0, 255));
+            break;
+        case 4: // Nowa akcja - agresywniejsze zwiększenie prądu wzbudzenia
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + 2 * PWM_INCREMENT, 0, 255));
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + 2 * PWM_INCREMENT, 0, 255));
+            break;
+        default:
+            break;
+    }
+}
 
 void loop() {
     // Handle serial commands
