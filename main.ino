@@ -659,7 +659,7 @@ void loop() {
     int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
     int action3 = chooseActionAgent3(state3);
     executeActionAgent3(action3);
-    float reward3 = calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop); // Assuming voltageDrop represents generator braking
+    float reward3 =  calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop); // Assuming voltageDrop represents generator braking
     int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
     updateQAgent3(state3, action3, reward3, nextState3);
 }
