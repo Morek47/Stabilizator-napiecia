@@ -323,30 +323,7 @@ float evaluateThreshold(float threshold) {
     return totalEfficiency / (TEST_DURATION / 100);
 }
 
-// Funkcja setup
-void setup() {
-    Serial.begin(115200);
-
-    pinMode(muxSelectPinA, OUTPUT);
-    pinMode(muxSelectPinB, OUTPUT);
-    pinMode(PIN_EXCITATION_COIL_1, OUTPUT);
-    pinMode(PIN_EXCITATION_COIL_2, OUTPUT);
-    pinMode(mosfetPin, OUTPUT);
-    pinMode(bjtPin1, OUTPUT);
-    pinMode(bjtPin2, OUTPUT);
-    pinMode(bjtPin3, OUTPUT);
-
-    server.begin();
-    display.begin();
-    display.display();
-
-    optimizer.initialize(3, bounds, 50, 10);
-
-    char buffer[64];
-    strcpy_P(buffer, welcomeMessage);
-    display.println(buffer);
-    display.display();
-}
+morek47
 
 // Funkcja odczytu sensorów
 void readSensors() {
