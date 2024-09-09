@@ -460,25 +460,33 @@ void executeActionAgent3(int action) {
 }
 
 // Define constants for Agent 3
-const int NUM_STATES_AGENT3 = 10; // Adjust as needed
-const int NUM_ACTIONS_AGENT3 = 5; // Adjust as needed
-const float VOLTAGE_TOLERANCE = 0.5; // Adjust as needed (zwiększona tolerancja)
+const int NUM_STATES_AGENT3 = 10;     // Liczba możliwych stanów dla agenta 3 (możesz dostosować)
+const int NUM_ACTIONS_AGENT3 = 5;      // Liczba możliwych akcji dla agenta 3 (możesz dostosować)
+const float VOLTAGE_TOLERANCE = 0.5;   // Tolerancja odchylenia napięcia (możesz dostosować)
+const float MAX_GENERATOR_BRAKING = 1.0; // Maksymalne dozwolone hamowanie generatora
 
 // Q-table for Agent 3
-float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3];
+float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3]; // Tablica przechowująca wartości Q dla każdej pary stan-akcja
 
-// Function to discretize state for Agent 3
+// Function to discretize state for Agent 3 - funkcja "dyskretyzuje" ciągłe wartości stanu na skończoną liczbę "koszyków" (binów)
 int discretizeStateAgent3(float error, float generatorLoad) {
-    int errorBin = constrain((int)((error + MAX_ERROR) / (2 * MAX_ERROR) * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
-    int loadBin = constrain((int)((generatorLoad / MAX_LOAD) * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
+    // Normalizacja błędu i obciążenia generatora do zakresu [0, 1]
+    float normalizedError = (error + MAX_ERROR) / (2 * MAX_ERROR);
+    float normalizedLoad = (generatorLoad / MAX_LOAD);
+
+    // Przypisanie znormalizowanych wartości do odpowiednich koszyków (binów)
+    int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+    int loadBin = constrain((int)(normalizedLoad * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
+
+    // Obliczenie indeksu stanu na podstawie koszyków (binów)
     return errorBin * NUM_STATES_AGENT3 + loadBin;
 }
 
-// Function to choose action for Agent 3
+// Function to choose action for Agent 3 - funkcja wybiera akcję na podstawie stanu, stosując strategię epsilon-greedy
 int chooseActionAgent3(int state) {
-    if (random(0, 100) < epsilon * 100) {
+    if (random(0, 100) < epsilon * 100) { // z prawdopodobieństwem epsilon wybieramy losową akcję (eksploracja)
         return random(0, NUM_ACTIONS_AGENT3);
-    } else {
+    } else { // w przeciwnym wypadku wybieramy akcję z największą wartością Q dla danego stanu (eksploatacja)
         int bestAction = 0;
         float bestQValue = qTableAgent3[state][0];
         for (int a = 1; a < NUM_ACTIONS_AGENT3; a++) {
@@ -491,7 +499,7 @@ int chooseActionAgent3(int state) {
     }
 }
 
-// Function to calculate reward for Agent 3
+// Function to calculate reward for Agent 3 - funkcja oblicza nagrodę na podstawie wydajności, napięcia, hamowania generatora i mocy wyjściowej
 float calculateRewardAgent3(float efficiency, float voltage, float generator_braking, float power_output) {
     const float MIN_EFFICIENCY = 0.8; // Minimalna akceptowalna wydajność
 
@@ -510,10 +518,40 @@ float calculateRewardAgent3(float efficiency, float voltage, float generator_bra
     return reward;
 }
 
-// Function to execute action for Agent 3
+// Function to execute action for Agent 3 - funkcja wykonuje akcję na podstawie jej numeru
 void executeActionAgent3(int action) {
     switch (action) {
-        case 0:
+        case 0: // Zwiększenie prądu wzbudzenia na pierwszym tranzystorze
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + PWM_INCREMENT, 0, 255));
+            break;
+        case 1: // Zmniejszenie prądu wzbudzenia na pierwszym tranzystorze
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - PWM_INCREMENT, 0, 255));
+            break;
+        case 2: // Zwiększenie prądu wzbudzenia na drugim tranzystorze
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + PWM_INCREMENT, 0, 255));
+            break;
+        case 3: // Zmniejszenie prądu wzbudzenia na drugim tranzystorze
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) - PWM_INCREMENT, 0, 255));
+            break;
+        case 4: 
+            // Add more actions if needed - tutaj możesz dodać więcej akcji, jeśli potrzebujesz
+            break;
+        default:
+            break;
+    }
+}
+
+// Function to update Q-value for Agent 3 - funkcja aktualizuje tablicę Q na podstawie stanu, akcji, nagrody i następnego stanu
+void updateQAgent3(int state, int action, float reward, int nextState) {
+    float maxQNextState = qTableAgent3[nextState][0];
+    for (int a = 1; a < NUM_ACTIONS_AGENT3; a++) {
+        if (qTableAgent3[nextState][a] > maxQNextState) {
+            maxQNextState = qTableAgent3[nextState][a];
+        }
+    }
+
+    qTableAgent3[state][action] += learningRate * (reward + discountFactor * maxQNextState - qTableAgent3[state][action]);
+}
             analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + PWM_INCREMENT, 0, 255));
             break;
         case 1:
@@ -567,32 +605,35 @@ void loop() {
 
         optimizer.update(newParams, averageEfficiency);
 
-        if (averageEfficiency > bestEfficiency) {
-            bestEfficiency = averageEfficiency;
-            memcpy(params, newParams, sizeof(params));
-        }
+if (averageEfficiency > bestEfficiency) {
+    bestEfficiency = averageEfficiency;
+    memcpy(params, suggestedParams, sizeof(params));
 
-        // Write to EEPROM only if the best efficiency has changed
-        if (averageEfficiency > bestEfficiency) {
-            EEPROM.put(0, lastOptimizationTime);
+    // Jeśli znaleziono lepszą wydajność, zapisz zaktualizowaną tablicę Q-learning 
+    // i czas ostatniej optymalizacji do EEPROM
+    EEPROM.put(0, lastOptimizationTime);
 
-            int qTableSize = sizeof(qTable);
-            for (int i = 0; i < qTableSize; i++) {
-                EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
-            }
-            EEPROM.commit();
-            Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
-        }
-
-        // Hill Climbing optimization of excitation phase switching threshold
-        LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
-        Serial.print("Updated excitation phase switching threshold: ");
-        Serial.println(LOAD_THRESHOLD);
+    int qTableSize = sizeof(qTable); // Pobranie rozmiaru tablicy Q-learning w bajtach
+    for (int i = 0; i < qTableSize; i++) {
+        // Konwersja tablicy Q-learning na ciąg bajtów i zapis do EEPROM
+        EEPROM.put(i + sizeof(lastOptimizationTime), ((byte*)qTable)[i]);
     }
 
-    // Delay
-    delay(100);
+    // Sprawdzenie, czy zapis do EEPROM się powiódł
+    if (EEPROM.commit()) {
+        Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
+    } else {
+        Serial.println("Error saving data to EEPROM!");
+    }
+}
 
+// Hill Climbing optimization of excitation phase switching threshold
+LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
+Serial.print("Updated excitation phase switching threshold: ");
+Serial.println(LOAD_THRESHOLD);
+
+// Delay
+delay(100);
     // Display data on the screen
     displayData(efficiencyPercent);
 
@@ -656,10 +697,13 @@ void loop() {
     updateQ(state2, action2, reward2, nextState2);
 
     // Q-learning 3 (generator braking)
-    int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
-    int action3 = chooseActionAgent3(state3);
-    executeActionAgent3(action3);
-    float reward3 =  calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop); // Assuming voltageDrop represents generator braking
-    int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
-    updateQAgent3(state3, action3, reward3, nextState3);
-}
+float power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
+int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
+int action3 = chooseActionAgent3(state3);
+executeActionAgent3(action3);
+
+// Przekazujemy wszystkie 4 argumenty do funkcji calculateRewardAgent3
+float reward3 = calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop, power_output); 
+
+int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
+updateQAgent3(state3, action3, reward3, nextState3);
