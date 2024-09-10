@@ -702,10 +702,7 @@ void loop() {
     efficiencyPercent = efficiency * 100.0;
     voltageDrop = Serial.parseFloat();
 
-    // Read sensor data again
-    externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    externalCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-
+  morek
     efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
     efficiencyPercent = efficiency * 100.0;
     voltageDrop = voltageIn[1] - voltageIn[0];
