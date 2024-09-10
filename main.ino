@@ -680,4 +680,25 @@ void loop() {
 
     int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
     updateQAgent3(state3, action3, reward3, nextState3);
+
+    // Dostosuj minimalny próg mocy wejściowej - dodane tutaj
+    float inputPower = voltageIn[0] * currentIn[0];
+    adjustMinInputPower(inputPower);
+}
+
+// Funkcja do automatycznego dostosowywania progu (umieszczona poza pętlą loop)
+void adjustMinInputPower(float inputPower) {
+    static float minObservedPower = 1e-6;
+    static float maxObservedPower = 1e-3;
+
+    // Aktualizuj minimalną i maksymalną obserwowaną moc
+    if (inputPower > 0 && inputPower < minObservedPower) {
+        minObservedPower = inputPower;
+    }
+    if (inputPower > maxObservedPower) {
+        maxObservedPower = inputPower;
+    }
+
+    // Dostosuj próg na podstawie obserwowanych wartości
+    minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
 }
