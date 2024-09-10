@@ -733,3 +733,10 @@ void loop() {
     int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
     updateQAgent3(state3, action3, reward3, nextState3);
 }
+
+// Funkcja odczytu sensorów
+void readSensors() {
+    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    voltageIn[1] = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Dodany odczyt dla voltageIn[1]
+    // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
+}
