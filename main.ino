@@ -357,22 +357,39 @@ void setup() {
     voltageDrop = 0.0;
 }
 
+void selectMuxChannel(int channel) {
+  digitalWrite(muxSelectPinA, (channel >> 0) & 0x01);
+  digitalWrite(muxSelectPinB, (channel >> 1) & 0x01);
+  delay(1); // Opóźnienie dla ustabilizowania multipleksera
+}
+
 // Funkcja odczytu sensorów
 void readSensors() {
-    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+  // Odczyt z czujników napięcia (kanały 0 i 1)
+  for (int i = 0; i < 2; i++) {
+    selectMuxChannel(i);
+    voltageIn[i] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+  }
 
-    // Odczyt zewnętrznego napięcia
-    externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+  // Odczyt z czujników prądu (kanały 2 i 3)
+  for (int i = 0; i < 2; i++) {
+    selectMuxChannel(i + 2);
 
-    // Odczyt zewnętrznego prądu
-    int raw_current_adc = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1);
+    int raw_current_adc = analogRead(muxInputPin);
 
-    // Definicja referencji prądowej (dostosuj do swojego sprzętu)
-    const float CURRENT_REFERENCE = 5.0; // Przykład: maksymalny prąd 5A
+    // Obliczanie napięcia wyjściowego czujnika
+    float sensorVoltage = raw_current_adc * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
-    // Konwersja wartości ADC na rzeczywisty prąd
-    externalCurrent = raw_current_adc * (CURRENT_REFERENCE / ADC_MAX_VALUE);
+    // Odejmowanie napięcia spoczynkowego (zakładamy Vcc/2)
+    float voltageOffset = VOLTAGE_REFERENCE / 2;
+    sensorVoltage -= voltageOffset;
+
+    // Przeliczanie napięcia na prąd (używając czułości 185 mV/A)
+    const float sensitivity = 0.185; // Dostosuj, jeśli czułość Twoich czujników jest inna
+    currentIn[i] = sensorVoltage / sensitivity;
+  }
 }
+
 // Funkcja sprawdzania alarmów
 void checkAlarm() {
     if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
