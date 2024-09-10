@@ -470,9 +470,9 @@ void executeActionAgent3(int action) {
 }
 
 // Define constants for Agent 3
-const int NUM_STATES_AGENT3 = 10;     // Liczba możliwych stanów dla agenta 3 (możesz dostosować)
-const int NUM_ACTIONS_AGENT3 = 5;      // Liczba możliwych akcji dla agenta 3 (możesz dostosować)
-const float VOLTAGE_TOLERANCE = 0.5;   // Tolerancja odchylenia napięcia (możesz dostosować)
+const int NUM_STATES_AGENT3 = 10; // Liczba możliwych stanów dla agenta 3 (możesz dostosować)
+const int NUM_ACTIONS_AGENT3 = 8; // Zwiększono liczbę akcji na 8
+const float VOLTAGE_TOLERANCE = 0.5; // Tolerancja odchylenia napięcia (możesz dostosować)
 const float MAX_GENERATOR_BRAKING = 1.0; // Maksymalne dozwolone hamowanie generatora
 
 // Q-table for Agent 3
@@ -509,7 +509,6 @@ int chooseActionAgent3(int state) {
     }
 }
 
-
 // Function to execute action for Agent 3 - funkcja wykonuje akcję na podstawie jej numeru
 void executeActionAgent3(int action) {
     switch (action) {
@@ -525,8 +524,17 @@ void executeActionAgent3(int action) {
         case 3: // Zmniejszenie prądu wzbudzenia na drugim tranzystorze
             analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) - PWM_INCREMENT, 0, 255));
             break;
-        case 4: 
-            // Add more actions if needed - tutaj możesz dodać więcej akcji, jeśli potrzebujesz
+        case 4: // Agresywniejsze zwiększenie prądu wzbudzenia na pierwszym tranzystorze
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + 2 * PWM_INCREMENT, 0, 255));
+            break;
+        case 5: // Agresywniejsze zmniejszenie prądu wzbudzenia na pierwszym tranzystorze
+            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - 2 * PWM_INCREMENT, 0, 255));
+            break;
+        case 6: // Agresywniejsze zwiększenie prądu wzbudzenia na drugim tranzystorze
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + 2 * PWM_INCREMENT, 0, 255));
+            break;
+        case 7: // Agresywniejsze zmniejszenie prądu wzbudzenia na drugim tranzystorze
+            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) - 2 * PWM_INCREMENT, 0, 255));
             break;
         default:
             break;
@@ -558,6 +566,7 @@ float calculateRewardAgent3(float efficiency, float voltage, float voltage_drop,
 
     return reward;
 }
+
 // Function to update Q-value for Agent 3 - funkcja aktualizuje tablicę Q na podstawie stanu, akcji, nagrody i następnego stanu
 void updateQAgent3(int state, int action, float reward, int nextState) {
     float maxQNextState = qTableAgent3[nextState][0];
@@ -568,25 +577,6 @@ void updateQAgent3(int state, int action, float reward, int nextState) {
     }
 
     qTableAgent3[state][action] += learningRate * (reward + discountFactor * maxQNextState - qTableAgent3[state][action]);
-}
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + PWM_INCREMENT, 0, 255));
-            break;
-        case 1:
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - PWM_INCREMENT, 0, 255));
-            break;
-        case 2:
-            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + PWM_INCREMENT, 0, 255));
-            break;
-        case 3:
-            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) - PWM_INCREMENT, 0, 255));
-            break;
-        case 4: // Nowa akcja - agresywniejsze zwiększenie prądu wzbudzenia
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + 2 * PWM_INCREMENT, 0, 255));
-            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + 2 * PWM_INCREMENT, 0, 255));
-            break;
-        default:
-            break;
-    }
 }
 
 void loop() {
@@ -740,22 +730,4 @@ void loop() {
 
     int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
     updateQAgent3(state3, action3, reward3, nextState3);
-}
-
-// Funkcja odczytu sensorów
-void readSensors() {
-    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    voltageIn[1] = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Dodany odczyt dla voltageIn[1]
-
-    // Odczyt zewnętrznego napięcia
-    externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-
-    // Odczyt zewnętrznego prądu
-    int raw_current_adc = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1);
-
-    // Definicja referencji prądowej (dostosuj do swojego sprzętu)
-    const float CURRENT_REFERENCE = 5.0; // Przykład: maksymalny prąd 5A
-
-    // Konwersja wartości ADC na rzeczywisty prąd
-    externalCurrent = raw_current_adc * (CURRENT_REFERENCE / ADC_MAX_VALUE);
 }
