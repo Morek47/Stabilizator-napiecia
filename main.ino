@@ -603,6 +603,14 @@ void loop() {
     learningRate = testLearningRate;
     discountFactor = testDiscountFactor;
 
+    // Odczyt danych z sensorów
+    readSensors();
+
+    // Obliczanie efektywności i innych parametrów na podstawie aktualnych danych z sensorów
+    efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+    efficiencyPercent = efficiency * 100.0;
+    voltageDrop = voltageIn[1] - voltageIn[0];
+
     // Bayesian optimization (at a certain interval)
     if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
         lastOptimizationTime = millis();
@@ -667,8 +675,6 @@ void loop() {
     Serial.print("Updated excitation phase switching threshold: ");
     Serial.println(LOAD_THRESHOLD);
 
-    // Delay
-    delay(100);
     // Display data on the screen
     displayData(efficiencyPercent);
 
@@ -701,16 +707,6 @@ void loop() {
     efficiency = Serial.parseFloat();
     efficiencyPercent = efficiency * 100.0;
     voltageDrop = Serial.parseFloat();
-
-  // Funkcja odczytu sensorów
-void readSensors() {
-    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    voltageIn[1] = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Dodany odczyt dla voltageIn[1]
-    // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
-}
-    efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-    efficiencyPercent = efficiency * 100.0;
-    voltageDrop = voltageIn[1] - voltageIn[0];
 
     advancedLogData(efficiencyPercent);
     checkAlarm();
@@ -746,3 +742,20 @@ void readSensors() {
     updateQAgent3(state3, action3, reward3, nextState3);
 }
 
+// Funkcja odczytu sensorów
+void readSensors() {
+    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    voltageIn[1] = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Dodany odczyt dla voltageIn[1]
+
+    // Odczyt zewnętrznego napięcia
+    externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Odczyt zewnętrznego prądu
+    int raw_current_adc = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1);
+
+    // Definicja referencji prądowej (dostosuj do swojego sprzętu)
+    const float CURRENT_REFERENCE = 5.0; // Przykład: maksymalny prąd 5A
+
+    // Konwersja wartości ADC na rzeczywisty prąd
+    externalCurrent = raw_current_adc * (CURRENT_REFERENCE / ADC_MAX_VALUE);
+}
