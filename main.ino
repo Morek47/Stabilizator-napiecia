@@ -702,7 +702,12 @@ void loop() {
     efficiencyPercent = efficiency * 100.0;
     voltageDrop = Serial.parseFloat();
 
-  morek
+  // Funkcja odczytu sensorów
+void readSensors() {
+    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    voltageIn[1] = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Dodany odczyt dla voltageIn[1]
+    // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
+}
     efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
     efficiencyPercent = efficiency * 100.0;
     voltageDrop = voltageIn[1] - voltageIn[0];
