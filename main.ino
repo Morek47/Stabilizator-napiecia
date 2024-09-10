@@ -357,9 +357,19 @@ void setup() {
 // Funkcja odczytu sensorów
 void readSensors() {
     voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
-}
 
+    // Odczyt zewnętrznego napięcia
+    externalVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Odczyt zewnętrznego prądu
+    int raw_current_adc = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1);
+
+    // Definicja referencji prądowej (dostosuj do swojego sprzętu)
+    const float CURRENT_REFERENCE = 5.0; // Przykład: maksymalny prąd 5A
+
+    // Konwersja wartości ADC na rzeczywisty prąd
+    externalCurrent = raw_current_adc * (CURRENT_REFERENCE / ADC_MAX_VALUE);
+}
 // Funkcja sprawdzania alarmów
 void checkAlarm() {
     if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
@@ -734,9 +744,3 @@ void loop() {
     updateQAgent3(state3, action3, reward3, nextState3);
 }
 
-// Funkcja odczytu sensorów
-void readSensors() {
-    voltageIn[0] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    voltageIn[1] = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Dodany odczyt dla voltageIn[1]
-    // Dodaj więcej kodu do odczytu innych sensorów, jeśli jest to wymagane
-}
