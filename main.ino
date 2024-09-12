@@ -104,6 +104,159 @@ const float MAX_KI = 1.0;
 const float MIN_KD = 0.0;
 const float MAX_KD = 5.0;
 
+// Klasa Agent1
+class Agent1 {
+public:
+    int akcja;
+
+    void odbierz_informacje_hamowania(float hamowanie) {
+        // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent2& agent2) {
+        agent3.odbierz_informacje_od_agentow(akcja, agent2.akcja);
+    }
+
+    int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 1
+        return 0;
+    }
+
+    int chooseAction(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 1
+        return 0;
+    }
+
+    void executeAction(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 1
+    }
+
+    float reward_agent1(float next_observation) {
+        // Implementacja obliczania nagrody dla Agenta 1
+        float napiecie = next_observation;
+        float spadek_napiecia = voltageDrop;
+        float excitation_current = currentIn[0]; // Przykładowa wartość, dostosuj według potrzeb
+        float excitation_current_threshold = 20.0; // Przykładowa wartość, dostosuj według potrzeb
+        float nagroda = 0;
+
+        nagroda -= abs(napiecie - VOLTAGE_SETPOINT);
+        nagroda -= spadek_napiecia;
+
+        // Zwiększona kara za spadek napięcia
+        nagroda -= COMPENSATION_FACTOR * spadek_napiecia; 
+
+        // Opcjonalna premia za wyższą moc wyjściową
+        // nagroda += POWER_OUTPUT_REWARD * power_output; // Jeśli ma to sens dla Agent1
+
+        // Kara jeśli akcja powoduje spadek prądu wzbudzenia poniżej progu
+        if (excitation_current < excitation_current_threshold) {
+            nagroda -= COMPENSATION_FACTOR; 
+        }
+
+        // Niewielka nagroda jeśli akcja pomaga zwiększyć prąd wzbudzenia w pożądanym zakresie
+        if (excitation_current > excitation_current_threshold && excitation_current <= 23) { 
+            nagroda += COMPENSATION_FACTOR; 
+        }
+
+        return nagroda;
+    }
+};
+
+// Klasa Agent2
+class Agent2 {
+public:
+    int akcja;
+
+    void odbierz_informacje_hamowania(float hamowanie) {
+        // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent1& agent1) {
+        agent3.odbierz_informacje_od_agentow(agent1.akcja, akcja);
+    }
+
+    int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 2
+        return 0;
+    }
+
+    int chooseAction(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 2
+        return 0;
+    }
+
+    void executeAction(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 2
+    }
+
+    float reward_agent2(float next_observation) {
+        float prad_wzbudzenia = next_observation;
+        float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
+        float hamowanie = 0; // Placeholder, zamień na rzeczywistą wartość
+        float previous_braking = 0; // Placeholder, zamień na rzeczywistą wartość
+
+        if (prad_wzbudzenia > 25) {
+            return -100; // Kara za zbyt wysoki prąd wzbudzenia
+        } else if (prad_wzbudzenia >= 23 && prad_wzbudzenia <= 25) {
+            nagroda = COMPENSATION_FACTOR; // Nagroda za wysoki prąd wzbudzenia w pożądanym zakresie
+
+            // Kara za zwiększenie hamowania
+            if (hamowanie > previous_braking) { 
+                nagroda -= COMPENSATION_FACTOR; 
+            }
+
+            return nagroda;
+        } else {
+            // Kara za zwiększenie hamowania
+            if (hamowanie > previous_braking) {
+                nagroda -= COMPENSATION_FACTOR; 
+            }
+
+            return nagroda;
+        }
+    }
+};
+
+// Klasa Agent3
+class Agent3 {
+public:
+    void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
+        // Implementacja logiki używającej akcji od Agenta 1 i Agenta 2
+    }
+
+    int discretizeStateAgent3(float arg1, float arg2) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 3
+        return 0;
+    }
+
+    int chooseActionAgent3(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 3
+        return 0;
+    }
+
+    void executeActionAgent3(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 3
+    }
+
+    float calculateRewardAgent3(float efficiency, float voltageIn, float voltageDrop, float power_output) {
+        // Implementacja obliczania nagrody dla Agenta 3
+        float nagroda = 0;
+        float hamowanie = 0; // Placeholder, zamień na rzeczywistą wartość
+
+        // Bardzo wysoka kara za hamowanie, aby silniej je zniechęcić
+        nagroda -= COMPENSATION_FACTOR * hamowanie;
+
+        nagroda += efficiency; // Zachowujemy nagrodę za wydajność
+
+        return nagroda;
+    }
+};
+
+Agent1 agent1;
+Agent2 agent2;
+Agent3 agent3
+
+
 // Funkcja dyskretyzacji stanu
 int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
     float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
