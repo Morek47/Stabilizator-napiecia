@@ -1,11 +1,13 @@
-#include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <Arduino.h>
 #include <EEPROM.h>
 #include <Wire.h>
 #include <Adafruit_SH1106.h>
 #include <ArduinoEigen.h>
 #include <BayesOptimizer.h>
+
+
 
 // Definicje pinów dla tranzystorów
 const int mosfetPin = D4;
@@ -17,6 +19,263 @@ const int excitationBJT2Pin = D9;
 const int PIN_EXTERNAL_VOLTAGE_SENSOR_1 = A1;
 const int PIN_EXTERNAL_CURRENT_SENSOR_1 = A2;
 const int PWM_INCREMENT = 10;
+ 
+ // Definicje zmiennych globalnych i stałych
+const float VOLTAGE_SETPOINT = 220.0;
+const float COMPENSATION_FACTOR = 1.0;
+const int NUM_ACTIONS = 4;
+const float epsilon = 0.1;
+const int NUM_STATE_BINS_ERROR = 10;
+const int NUM_STATE_BINS_LOAD = 10;
+const int NUM_STATE_BINS_KP = 10;
+const int NUM_STATE_BINS_KI = 10;
+const int NUM_STATE_BINS_KD = 10;
+const float MIN_ERROR = 0.0;
+const float MAX_ERROR = 1.0;
+const float MIN_LOAD = 0.0;
+const float MAX_LOAD = 1.0;
+const float MIN_KP = 0.0;
+const float MAX_KP = 1.0;
+const float MIN_KI = 0.0;
+const float MAX_KI = 1.0;
+const float MIN_KD = 0.0;
+const float MAX_KD = 1.0;
+const int PWM_INCREMENT = 1;
+const int PIN_CURRENT_SENSOR = 0;
+const int PIN_EXCITATION_COIL_1 = 1;
+const int PIN_EXCITATION_COIL_2 = 2;
+float qTable[100][NUM_ACTIONS][2]; // Przykładowa tablica Q-wartości
+float voltageDrop = 0.0;
+float currentIn[1] = {0.0};
+
+int constrain(int value, int min, int max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
+ class Agent1 {
+public:
+    int akcja;
+    float feedbackToAgent2;
+
+    void odbierz_informacje_hamowania(float hamowanie) {
+        // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent2& agent2) {
+        agent3.odbierz_informacje_od_agentow(akcja, agent2.akcja);
+    }
+
+    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
+        agent2.odbierz_informacje_od_agenta1(feedback);
+    }
+
+    int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 1
+        float normalizedArg1 = (arg1 - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+        float normalizedArg2 = (arg2 - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+        float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+        float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+        int arg1Bin = constrain((int)(normalizedArg1 * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+        int arg2Bin = constrain((int)(normalizedArg2 * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+        int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+        int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+        int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
+        return arg1Bin + NUM_STATE_BINS_ERROR * (arg2Bin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
+    }
+
+    int chooseAction(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 1
+        if (rand() % 100 < epsilon * 100) {
+            return rand() % NUM_ACTIONS;
+        } else {
+            int bestAction = 0;
+            float bestQValue = qTable[state][0][0]; // Zakładamy, że Q-wartości dla Agenta 1 są w qTable[state][akcja][0]
+            for (int a = 1; a < NUM_ACTIONS; a++) {
+                if (qTable[state][a][0] > bestQValue) {
+                    bestQValue = qTable[state][a][0];
+                    bestAction = a;
+                }
+            }
+            return bestAction;
+        }
+    }
+
+    void executeAction(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 1
+        // Przykładowa implementacja, dostosuj według potrzeb
+        switch (action) {
+            case 0:
+                // Wykonaj akcję 0
+                break;
+            case 1:
+                // Wykonaj akcję 1
+                break;
+            case 2:
+                // Wykonaj akcję 2
+                break;
+            case 3:
+                // Wykonaj akcję 3
+                break;
+            // Dodaj inne przypadki akcji, jeśli są potrzebne
+        }
+    }
+
+    float reward(float next_observation) {
+        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
+        float napiecie = next_observation;
+        float spadek_napiecia = voltageDrop;
+        float excitation_current = currentIn[0]; // Przykładowa wartość, dostosuj według potrzeb
+        float excitation_current_threshold = 20.0; // Przykładowa wartość, dostosuj według potrzeb
+        float nagroda = 0;
+
+        nagroda -= abs(napiecie - VOLTAGE_SETPOINT);
+        nagroda -= spadek_napiecia;
+
+        // Zwiększona kara za spadek napięcia
+        nagroda -= COMPENSATION_FACTOR * spadek_napiecia; 
+
+        // Kara jeśli akcja powoduje spadek prądu wzbudzenia poniżej progu
+        if (excitation_current < excitation_current_threshold) {
+            nagroda -= COMPENSATION_FACTOR; 
+        }
+
+        // Niewielka nagroda jeśli akcja pomaga zwiększyć prąd wzbudzenia w pożądanym zakresie
+        if (excitation_current > excitation_current_threshold && excitation_current <= 23) { 
+            nagroda += COMPENSATION_FACTOR; 
+        }
+
+        return nagroda;
+    }
+};
+
+class Agent2 {
+public:
+    int akcja;
+    float feedbackFromAgent3;
+
+    void odbierz_informacje_hamowania(float hamowanie) {
+        // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void odbierz_informacje_od_agenta3(float feedback) {
+        feedbackFromAgent3 = feedback;
+    }
+
+    void odbierz_informacje_od_agenta1(float feedback) {
+        feedbackFromAgent3 = feedback;
+    }
+
+    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent1& agent1) {
+        agent3.odbierz_informacje_od_agentow(agent1.akcja, akcja);
+    }
+
+    int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 2
+        float normalizedArg1 = (arg1 - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+        float normalizedArg2 = (arg2 - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+        float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+        float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+        int arg1Bin = constrain((int)(normalizedArg1 * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+        int arg2Bin = constrain((int)(normalizedArg2 * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+        int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+        int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+        int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
+        return arg1Bin + NUM_STATE_BINS_ERROR * (arg2Bin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
+    }
+
+    int chooseAction(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 2
+        if (rand() % 100 < epsilon * 100) {
+            return rand() % NUM_ACTIONS;
+        } else {
+            int bestAction = 0;
+            float bestQValue = qTable[state][0][1]; // Zakładamy, że Q-wartości dla Agenta 2 są w qTable[state][akcja][1]
+            for (int a = 1; a < NUM_ACTIONS; a++) {
+                if (qTable[state][a][1] > bestQValue) {
+                    bestQValue = qTable[state][a][1];
+                    bestAction = a;
+                }
+            }
+            return bestAction;
+        }
+    }
+
+    void executeAction(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 2
+        const int MAX_CURRENT = 25; // Maksymalny prąd wzbudzenia w amperach
+        int current = analogRead(PIN_CURRENT_SENSOR); // Odczyt aktualnego prądu wzbudzenia z czujnika zewnętrznego
+
+        switch (action) {
+            case 0:
+                if (current + PWM_INCREMENT <= MAX_CURRENT) {
+                    analogWrite(PIN_EXCITATION_COIL_1, current + PWM_INCREMENT);
+                }
+                break;
+            case 1:
+                if (current - PWM_INCREMENT >= 0) {
+                    analogWrite(PIN_EXCITATION_COIL_1, current - PWM_INCREMENT);
+                }
+                break;
+            case 2:
+                if (current + PWM_INCREMENT <= MAX_CURRENT) {
+                    analogWrite(PIN_EXCITATION_COIL_2, current + PWM_INCREMENT);
+                }
+                break;
+            case 3:
+                if (current - PWM_INCREMENT >= 0) {
+                    analogWrite(PIN_EXCITATION_COIL_2, current - PWM_INCREMENT);
+                }
+                break;
+            // Dodaj inne przypadki akcji, jeśli są potrzebne
+        }
+    }
+
+    float reward(float next_observation) {
+        // Implementacja wspólnej funkcji nagrody
+        float prad_wzbudzenia = next_observation;
+        float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
+
+        // Uwzględnij feedback od Agenta 3
+        nagroda += feedbackFromAgent3;
+
+        return nagroda;
+    }
+};
+
+class Agent3 {
+public:
+    void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
+        // Implementacja logiki używającej akcji od Agentów 1 i 2
+    }
+};
+
+
+// Nowa definicja pinów
+const int newPin1 = D10;
+const int newPin2 = D11;
+const int newPin3 = D12;
+const int newPin4 = D13;
+
+// Definicje zmiennych globalnych
+float voltageIn[2] = {0};
+float currentIn[2] = {0};
+float externalVoltage = 0.0;
+float externalCurrent = 0.0;
+float efficiency = 0.0;
+float efficiencyPercent = 0.0;
+float voltageDrop = 0.0;
+ESP8266WebServer server(80);
+Adafruit_SH1106 display(128, 64, &Wire, -1);
+int lastAction = 0;
+
 
 // Stałe konfiguracyjne
 float LOAD_THRESHOLD = 0.5;
@@ -105,70 +364,98 @@ const float MIN_KD = 0.0;
 const float MAX_KD = 5.0;
 
 
-
-class Agent1 {
+class Agent2 {
 public:
     int akcja;
-    float feedbackToAgent2;
+    float feedbackFromAgent3;
 
     void odbierz_informacje_hamowania(float hamowanie) {
         // Implementacja logiki używającej informacji o hamowaniu
     }
 
-    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent2& agent2) {
-        agent3.odbierz_informacje_od_agentow(akcja, agent2.akcja);
+    void odbierz_informacje_od_agenta3(float feedback) {
+        feedbackFromAgent3 = feedback;
     }
 
-    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
-        agent2.odbierz_informacje_od_agenta1(feedback);
+    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent1& agent1) {
+        agent3.odbierz_informacje_od_agentow(agent1.akcja, akcja);
     }
 
     int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
-        // Implementacja logiki dyskretyzacji stanu dla Agenta 1
-        return 0;
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 2
+        float normalizedArg1 = (arg1 - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+        float normalizedArg2 = (arg2 - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+        float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+        float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+        int arg1Bin = constrain((int)(normalizedArg1 * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+        int arg2Bin = constrain((int)(normalizedArg2 * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+        int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+        int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+        int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
+        return arg1Bin + NUM_STATE_BINS_ERROR * (arg2Bin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
     }
 
     int chooseAction(int state) {
-        // Implementacja logiki wyboru akcji dla Agenta 1
-        return 0;
+        // Implementacja logiki wyboru akcji dla Agenta 2
+        if (random(0, 100) < epsilon * 100) {
+            return random(0, NUM_ACTIONS);
+        } else {
+            int bestAction = 0;
+            float bestQValue = qTable[state][0][1]; // Zakładamy, że Q-wartości dla Agenta 2 są w qTable[state][akcja][1]
+            for (int a = 1; a < NUM_ACTIONS; a++) {
+                if (qTable[state][a][1] > bestQValue) {
+                    bestQValue = qTable[state][a][1];
+                    bestAction = a;
+                }
+            }
+            return bestAction;
+        }
     }
 
     void executeAction(int action) {
-        // Implementacja logiki wykonania akcji dla Agenta 1
+        // Implementacja logiki wykonania akcji dla Agenta 2
+        const int MAX_CURRENT = 25; // Maksymalny prąd wzbudzenia w amperach
+        int current = analogRead(PIN_CURRENT_SENSOR); // Odczyt aktualnego prądu wzbudzenia z czujnika zewnętrznego
+
+        switch (action) {
+            case 0:
+                if (current + PWM_INCREMENT <= MAX_CURRENT) {
+                    analogWrite(PIN_EXCITATION_COIL_1, current + PWM_INCREMENT);
+                }
+                break;
+            case 1:
+                if (current - PWM_INCREMENT >= 0) {
+                    analogWrite(PIN_EXCITATION_COIL_1, current - PWM_INCREMENT);
+                }
+                break;
+            case 2:
+                if (current + PWM_INCREMENT <= MAX_CURRENT) {
+                    analogWrite(PIN_EXCITATION_COIL_2, current + PWM_INCREMENT);
+                }
+                break;
+            case 3:
+                if (current - PWM_INCREMENT >= 0) {
+                    analogWrite(PIN_EXCITATION_COIL_2, current - PWM_INCREMENT);
+                }
+                break;
+            // Dodaj inne przypadki akcji, jeśli są potrzebne
+        }
     }
 
     float reward(float next_observation) {
-        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
-        float napiecie = next_observation;
-        float spadek_napiecia = voltageDrop;
-        float excitation_current = currentIn[0]; // Przykładowa wartość, dostosuj według potrzeb
-        float excitation_current_threshold = 20.0; // Przykładowa wartość, dostosuj według potrzeb
-        float nagroda = 0;
+        // Implementacja wspólnej funkcji nagrody
+        float prad_wzbudzenia = next_observation;
+        float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
 
-        nagroda -= abs(napiecie - VOLTAGE_SETPOINT);
-        nagroda -= spadek_napiecia;
-
-        // Zwiększona kara za spadek napięcia
-        nagroda -= COMPENSATION_FACTOR * spadek_napiecia; 
-
-        // Opcjonalna premia za wyższą moc wyjściową
-        // nagroda += POWER_OUTPUT_REWARD * power_output; // Jeśli ma to sens dla Agent1
-
-        // Kara jeśli akcja powoduje spadek prądu wzbudzenia poniżej progu
-        if (excitation_current < excitation_current_threshold) {
-            nagroda -= COMPENSATION_FACTOR; 
-        }
-
-        // Niewielka nagroda jeśli akcja pomaga zwiększyć prąd wzbudzenia w pożądanym zakresie
-        if (excitation_current > excitation_current_threshold && excitation_current <= 23) { 
-            nagroda += COMPENSATION_FACTOR; 
-        }
+        // Uwzględnij feedback od Agenta 3
+        nagroda += feedbackFromAgent3;
 
         return nagroda;
     }
 };
-
-
 
 
 class Agent2 {
@@ -203,38 +490,16 @@ public:
     }
 
     float reward(float next_observation) {
-        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
+        // Implementacja wspólnej funkcji nagrody
         float prad_wzbudzenia = next_observation;
         float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
-        float hamowanie = 0; // Placeholder, zamień na rzeczywistą wartość
-        float previous_braking = 0; // Placeholder, zamień na rzeczywistą wartość
 
         // Uwzględnij feedback od Agenta 3
         nagroda += feedbackFromAgent3;
 
-        if (prad_wzbudzenia > 25) {
-            return -100; // Kara za zbyt wysoki prąd wzbudzenia
-        } else if (prad_wzbudzenia >= 23 && prad_wzbudzenia <= 25) {
-            nagroda = COMPENSATION_FACTOR; // Nagroda za wysoki prąd wzbudzenia w pożądanym zakresie
-
-            // Kara za zwiększenie hamowania
-            if (hamowanie > previous_braking) { 
-                nagroda -= COMPENSATION_FACTOR; 
-            }
-
-            return nagroda;
-        } else {
-            // Kara za zwiększenie hamowania
-            if (hamowanie > previous_braking) {
-                nagroda -= COMPENSATION_FACTOR; 
-            }
-
-            return nagroda;
-        }
+        return nagroda;
     }
 };
-
-
 
 class Agent3 {
 public:
@@ -260,15 +525,171 @@ public:
         // Implementacja logiki wykonania akcji dla Agenta 3
     }
 
-    float calculateRewardAgent3(float efficiency, float voltageIn, float voltageDrop, float power_output) {
-        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
+    float reward(float next_observation) {
+        // Implementacja wspólnej funkcji nagrody
         float nagroda = 0;
-        float hamowanie = 0; // Placeholder, zamień na rzeczywistą wartość
 
-        // Bardzo wysoka kara za hamowanie, aby silniej je zniechęcić
-        nagroda -= COMPENSATION_FACTOR * hamowanie;
+        // Nagroda za stabilność napięcia
+        nagroda -= abs(next_observation - VOLTAGE_SETPOINT);
 
-        nagroda += efficiency; // Zachowujemy nagrodę za wydajność
+        return nagroda;
+    }
+};
+class Agent1 {
+public:
+    int akcja;
+
+    void odbierz_informacje_od_agenta2(int feedback) {
+        // Implementacja logiki używającej informacji od Agenta 2
+    }
+
+    void wyslij_informacje_do_agenta2(class Agent2& agent2) {
+        agent2.odbierz_informacje_od_agenta3(akcja);
+    }
+
+    int discretizeState(float current) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 1
+        return 0;
+    }
+
+    int chooseAction(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 1
+        return 0;
+    }
+
+    void executeAction(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 1
+    }
+
+    float reward(float next_observation) {
+        // Implementacja wspólnej funkcji nagrody
+        return next_observation;
+    }
+};
+
+class Agent2 {
+public:
+    int akcja;
+    float feedbackFromAgent3;
+
+    void odbierz_informacje_hamowania(float hamowanie) {
+        // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void odbierz_informacje_od_agenta3(float feedback) {
+        feedbackFromAgent3 = feedback;
+    }
+
+    void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent1& agent1) {
+        agent3.odbierz_informacje_od_agentow(agent1.akcja, akcja);
+    }
+
+    int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 2
+        float normalizedArg1 = (arg1 - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+        float normalizedArg2 = (arg2 - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+        float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
+        float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
+        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+
+        int arg1Bin = constrain((int)(normalizedArg1 * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
+        int arg2Bin = constrain((int)(normalizedArg2 * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
+        int kpBin = constrain((int)(normalizedKp * NUM_STATE_BINS_KP), 0, NUM_STATE_BINS_KP - 1);
+        int kiBin = constrain((int)(normalizedKi * NUM_STATE_BINS_KI), 0, NUM_STATE_BINS_KI - 1);
+        int kdBin = constrain((int)(normalizedKd * NUM_STATE_BINS_KD), 0, NUM_STATE_BINS_KD - 1);
+
+        return arg1Bin + NUM_STATE_BINS_ERROR * (arg2Bin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
+    }
+
+    int chooseAction(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 2
+        if (random(0, 100) < epsilon * 100) {
+            return random(0, NUM_ACTIONS);
+        } else {
+            int bestAction = 0;
+            float bestQValue = qTable[state][0][1]; // Zakładamy, że Q-wartości dla Agenta 2 są w qTable[state][akcja][1]
+            for (int a = 1; a < NUM_ACTIONS; a++) {
+                if (qTable[state][a][1] > bestQValue) {
+                    bestQValue = qTable[state][a][1];
+                    bestAction = a;
+                }
+            }
+            return bestAction;
+        }
+    }
+
+    void executeAction(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 2
+        const int MAX_CURRENT = 25; // Maksymalny prąd wzbudzenia w amperach
+        int current = analogRead(PIN_CURRENT_SENSOR); // Odczyt aktualnego prądu wzbudzenia z czujnika zewnętrznego
+
+        switch (action) {
+            case 0:
+                if (current + PWM_INCREMENT <= MAX_CURRENT) {
+                    analogWrite(PIN_EXCITATION_COIL_1, current + PWM_INCREMENT);
+                }
+                break;
+            case 1:
+                if (current - PWM_INCREMENT >= 0) {
+                    analogWrite(PIN_EXCITATION_COIL_1, current - PWM_INCREMENT);
+                }
+                break;
+            case 2:
+                if (current + PWM_INCREMENT <= MAX_CURRENT) {
+                    analogWrite(PIN_EXCITATION_COIL_2, current + PWM_INCREMENT);
+                }
+                break;
+            case 3:
+                if (current - PWM_INCREMENT >= 0) {
+                    analogWrite(PIN_EXCITATION_COIL_2, current - PWM_INCREMENT);
+                }
+                break;
+            // Dodaj inne przypadki akcji, jeśli są potrzebne
+        }
+    }
+
+    float reward(float next_observation) {
+        // Implementacja wspólnej funkcji nagrody
+        float prad_wzbudzenia = next_observation;
+        float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
+
+        // Uwzględnij feedback od Agenta 3
+        nagroda += feedbackFromAgent3;
+
+        return nagroda;
+    }
+};
+
+class Agent3 {
+public:
+    void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
+        // Implementacja logiki używającej akcji od Agenta 1 i Agenta 2
+    }
+
+    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
+        agent2.odbierz_informacje_od_agenta3(feedback);
+    }
+
+    int discretizeStateAgent3(float arg1, float arg2) {
+        // Implementacja logiki dyskretyzacji stanu dla Agenta 3
+        return 0;
+    }
+
+    int chooseActionAgent3(int state) {
+        // Implementacja logiki wyboru akcji dla Agenta 3
+        return 0;
+    }
+
+    void executeActionAgent3(int action) {
+        // Implementacja logiki wykonania akcji dla Agenta 3
+    }
+
+    float reward(float next_observation) {
+        // Implementacja wspólnej funkcji nagrody
+        float nagroda = 0;
+
+        // Nagroda za stabilność napięcia
+        nagroda -= abs(next_observation - VOLTAGE_SETPOINT);
 
         return nagroda;
     }
@@ -521,11 +942,51 @@ void advancedLogData() {
     Serial.println(lastAction);
 }
 
-void setup() {
-    // Inicjalizacja
-    Serial.begin(115200);
+using System;
 
-    // Inne inicjalizacje
+class Program
+{
+    static void Main()
+    {
+        int totalEpochs = 100; // Całkowita liczba epok
+        int completedEpochs = 0; // Ukończone epoki
+
+        // Symulacja procesu nauki
+        for (int epoch = 1; epoch <= totalEpochs; epoch++)
+        {
+            // Symulacja treningu AI
+            TrainAI(epoch);
+
+            // Aktualizacja ukończonych epok
+            completedEpochs = epoch;
+
+            // Obliczenie postępu w procentach
+            double progress = (double)completedEpochs / totalEpochs * 100;
+
+            // Wyświetlenie postępu
+            Console.WriteLine($"Postęp nauki AI: {progress:F2}%");
+        }
+    }
+
+    static void TrainAI(int epoch)
+    {
+        // Symulacja treningu AI (zastąp rzeczywistym kodem treningu)
+        System.Threading.Thread.Sleep(50); // Symulacja czasu treningu
+    }
+}
+
+
+/ Deklaracje zmiennych globalnych
+float targetVoltage = 5.0; // Docelowe napięcie
+float currentVoltage;
+float currentCurrent;
+const float maxCurrent = 25.0; // Maksymalny prąd w amperach
+
+
+void setup() {
+    Serial.begin(115200); // Inicjalizacja portu szeregowego
+
+    // Inicjalizacja pinów i innych komponentów
     pinMode(muxSelectPinA, OUTPUT);
     pinMode(muxSelectPinB, OUTPUT);
     pinMode(PIN_EXCITATION_COIL_1, OUTPUT);
@@ -553,6 +1014,7 @@ void setup() {
     efficiencyPercent = 0.0;
     voltageDrop = 0.0;
 }
+
 
 
 void selectMuxChannel(int channel) {
@@ -655,8 +1117,8 @@ void handleSerialCommands() {
 }
 
 void loop() {
-    // Handle serial commands
     handleSerialCommands();
+    detectComputerConnection();
 
     // Testowanie różnych wartości epsilon, learningRate i discountFactor
     static const float testEpsilon = 0.3;
@@ -804,4 +1266,14 @@ void adjustMinInputPower(float inputPower) {
 
     // Dostosuj próg na podstawie obserwowanych wartości
     minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
+}
+
+void detectComputerConnection() {
+    if (Serial) {
+        Serial.println("Komputer podłączony. Przenoszenie mocy obliczeniowej...");
+        // Wyślij komendę do komputera, aby rozpocząć przenoszenie mocy obliczeniowej
+        Serial.println("START_COMPUTE");
+    }
+}
+
 }
