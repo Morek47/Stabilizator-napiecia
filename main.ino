@@ -48,9 +48,9 @@ const int NUM_STATE_BINS_KI = 3;
 const int NUM_STATE_BINS_KD = 3;
 
 const int NUM_ACTIONS = 6;
-const float epsilon = 0.3;
-const float learningRate = 0.1;
-const float discountFactor = 0.9;
+float epsilon = 0.3;
+float learningRate = 0.1;
+float discountFactor = 0.9;
 
 // Parametry automatycznej optymalizacji
 const unsigned long OPTIMIZATION_INTERVAL = 60000;
@@ -104,10 +104,12 @@ const float MAX_KI = 1.0;
 const float MIN_KD = 0.0;
 const float MAX_KD = 5.0;
 
-// Klasa Agent1
+
+
 class Agent1 {
 public:
     int akcja;
+    float feedbackToAgent2;
 
     void odbierz_informacje_hamowania(float hamowanie) {
         // Implementacja logiki używającej informacji o hamowaniu
@@ -115,6 +117,10 @@ public:
 
     void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent2& agent2) {
         agent3.odbierz_informacje_od_agentow(akcja, agent2.akcja);
+    }
+
+    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
+        agent2.odbierz_informacje_od_agenta1(feedback);
     }
 
     int discretizeState(float arg1, float arg2, float Kp, float Ki, float Kd) {
@@ -131,8 +137,8 @@ public:
         // Implementacja logiki wykonania akcji dla Agenta 1
     }
 
-    float reward_agent1(float next_observation) {
-        // Implementacja obliczania nagrody dla Agenta 1
+    float reward(float next_observation) {
+        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
         float napiecie = next_observation;
         float spadek_napiecia = voltageDrop;
         float excitation_current = currentIn[0]; // Przykładowa wartość, dostosuj według potrzeb
@@ -162,13 +168,20 @@ public:
     }
 };
 
-// Klasa Agent2
+
+
+
 class Agent2 {
 public:
     int akcja;
+    float feedbackFromAgent3;
 
     void odbierz_informacje_hamowania(float hamowanie) {
         // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void odbierz_informacje_od_agenta3(float feedback) {
+        feedbackFromAgent3 = feedback;
     }
 
     void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent1& agent1) {
@@ -189,11 +202,15 @@ public:
         // Implementacja logiki wykonania akcji dla Agenta 2
     }
 
-    float reward_agent2(float next_observation) {
+    float reward(float next_observation) {
+        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
         float prad_wzbudzenia = next_observation;
         float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
         float hamowanie = 0; // Placeholder, zamień na rzeczywistą wartość
         float previous_braking = 0; // Placeholder, zamień na rzeczywistą wartość
+
+        // Uwzględnij feedback od Agenta 3
+        nagroda += feedbackFromAgent3;
 
         if (prad_wzbudzenia > 25) {
             return -100; // Kara za zbyt wysoki prąd wzbudzenia
@@ -217,11 +234,16 @@ public:
     }
 };
 
-// Klasa Agent3
+
+
 class Agent3 {
 public:
     void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
         // Implementacja logiki używającej akcji od Agenta 1 i Agenta 2
+    }
+
+    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
+        agent2.odbierz_informacje_od_agenta3(feedback);
     }
 
     int discretizeStateAgent3(float arg1, float arg2) {
@@ -239,7 +261,7 @@ public:
     }
 
     float calculateRewardAgent3(float efficiency, float voltageIn, float voltageDrop, float power_output) {
-        // Implementacja obliczania nagrody dla Agenta 3
+        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
         float nagroda = 0;
         float hamowanie = 0; // Placeholder, zamień na rzeczywistą wartość
 
@@ -252,18 +274,17 @@ public:
     }
 };
 
+
 Agent1 agent1;
 Agent2 agent2;
-Agent3 agent3
+Agent3 agent3;
 
-
-// Funkcja dyskretyzacji stanu
 int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
     float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
     float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
     float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
     float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
-    float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
+    float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MAX_KD);
 
     int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
     int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
@@ -274,7 +295,7 @@ int discretizeState(float error, float generatorLoad, float Kp, float Ki, float 
     return errorBin + NUM_STATE_BINS_ERROR * (loadBin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
 }
 
-// Funkcja wybierająca akcję na podstawie stanu
+
 int chooseAction(int state) {
     if (random(0, 100) < epsilon * 100) {
         return random(0, NUM_ACTIONS);
@@ -283,13 +304,14 @@ int chooseAction(int state) {
         float bestQValue = qTable[state][0][0];
         for (int a = 1; a < NUM_ACTIONS; a++) {
             if (qTable[state][a][0] > bestQValue) {
-                bestAction = a;
                 bestQValue = qTable[state][a][0];
+                bestAction = a;
             }
         }
         return bestAction;
     }
 }
+
 
 // Funkcja wykonująca akcję
 void executeAction(int action) {
@@ -479,9 +501,31 @@ float evaluateThreshold(float threshold) {
     return totalEfficiency / (TEST_DURATION / 100);
 }
 
+void advancedLogData() {
+    // Przykładowe logowanie danych
+    Serial.print("Napięcie wejściowe: ");
+    Serial.println(voltageIn[0]);
+    Serial.print("Prąd wejściowy: ");
+    Serial.println(currentIn[0]);
+    Serial.print("Napięcie zewnętrzne: ");
+    Serial.println(externalVoltage);
+    Serial.print("Prąd zewnętrzny: ");
+    Serial.println(externalCurrent);
+    Serial.print("Spadek napięcia: ");
+    Serial.println(voltageDrop);
+    Serial.print("Wydajność: ");
+    Serial.println(efficiency);
+    Serial.print("Wydajność procentowa: ");
+    Serial.println(efficiencyPercent);
+    Serial.print("Ostatnia akcja: ");
+    Serial.println(lastAction);
+}
+
 void setup() {
+    // Inicjalizacja
     Serial.begin(115200);
 
+    // Inne inicjalizacje
     pinMode(muxSelectPinA, OUTPUT);
     pinMode(muxSelectPinB, OUTPUT);
     pinMode(PIN_EXCITATION_COIL_1, OUTPUT);
@@ -510,10 +554,10 @@ void setup() {
     voltageDrop = 0.0;
 }
 
+
 void selectMuxChannel(int channel) {
-  digitalWrite(muxSelectPinA, (channel >> 0) & 0x01);
-  digitalWrite(muxSelectPinB, (channel >> 1) & 0x01);
-  delay(1); // Opóźnienie dla ustabilizowania multipleksera
+    digitalWrite(muxSelectPinA, channel & 1);
+    digitalWrite(muxSelectPinB, (channel >> 1) & 1);
 }
 
 // Funkcja odczytu sensorów
@@ -570,9 +614,10 @@ void energyManagement() {
     }
 }
 
-// Funkcja wyświetlania danych na ekranie
+// Funkcja wyświetlania danych na ekranie w kolorze
 void displayData(float efficiencyPercent) {
     display.clearDisplay();
+    display.setTextColor(WHITE, BLACK); // Ustawienie koloru tekstu na biały na czarnym tle
     display.setCursor(0, 0);
     display.print("Napięcie: ");
     display.print(voltageIn[0]);
@@ -580,104 +625,11 @@ void displayData(float efficiencyPercent) {
     display.print("Prąd: ");
     display.print(currentIn[0]);
     display.println(" A");
+    display.setTextColor(WHITE, BLACK); // Ustawienie koloru tekstu na biały na czarnym tle
     display.print("Wydajność: ");
     display.print(efficiencyPercent);
     display.println(" %");
     display.display();
-}
-
-// Define constants for Agent 3
-const int NUM_STATES_AGENT3 = 10; // Adjust as needed
-const int NUM_ACTIONS_AGENT3 = 5; // Adjust as needed
-const float VOLTAGE_TOLERANCE = 0.1; // Adjust as needed
-const float MAX_GENERATOR_BRAKING = 1.0; // Adjust as needed
-
-// Q-table for Agent 3
-float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3];
-
-// Function to discretize state for Agent 3
-int discretizeStateAgent3(float error, float generatorLoad) {
-    int errorBin = constrain((int)((error + MAX_ERROR) / (2 * MAX_ERROR) * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
-    int loadBin = constrain((int)((generatorLoad / MAX_LOAD) * NUM_STATES_AGENT3), 0, NUM_STATES_AGENT3 - 1);
-    return errorBin * NUM_STATES_AGENT3 + loadBin;
-}
-
-// Function to choose action for Agent 3
-int chooseActionAgent3(int state) {
-    if (random(0, 100) < epsilon * 100) {
-        return random(0, NUM_ACTIONS_AGENT3);
-    } else {
-        int bestAction = 0;
-        float bestQValue = qTableAgent3[state][0];
-        for (int a = 1; a < NUM_ACTIONS_AGENT3; a++) {
-            if (qTableAgent3[state][a] > bestQValue) {
-                bestAction = a;
-                bestQValue = qTableAgent3[state][a];
-            }
-        }
-        return bestAction;
-    }
-}
-
-// Function to execute action for Agent 3
-void executeActionAgent3(int action) {
-    switch (action) {
-        case 0:
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) + PWM_INCREMENT, 0, 255));
-            break;
-        case 1:
-            analogWrite(excitationBJT1Pin, constrain(analogRead(excitationBJT1Pin) - PWM_INCREMENT, 0, 255));
-            break;
-        case 2:
-            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) + PWM_INCREMENT, 0, 255));
-            break;
-        case 3:
-            analogWrite(excitationBJT2Pin, constrain(analogRead(excitationBJT2Pin) - PWM_INCREMENT, 0, 255));
-            break;
-        case 4:
-            // Add more actions if needed
-            break;
-        default:
-            break;
-    }
-}
-
-// Function to calculate reward for Agent 3
-float calculateRewardAgent3(float efficiency, float voltage, float voltage_drop, float power_output) {
-    const float MIN_EFFICIENCY = 0.8; // Minimalna akceptowalna wydajność
-    const float MAX_VOLTAGE_DROP = 1.0; // Maksymalny akceptowalny spadek napięcia
-
-    float reward = power_output; // Nagroda bazowa to moc wyjściowa
-
-    // Kara za duże wahania napięcia
-    float voltage_deviation = abs(voltage - VOLTAGE_SETPOINT);
-    if (voltage_deviation > VOLTAGE_TOLERANCE) {
-        reward -= voltage_deviation - VOLTAGE_TOLERANCE; 
-    }
-
-    // Kara za spadek wydajności poniżej minimalnego progu
-    if (efficiency < MIN_EFFICIENCY) {
-        reward -= (MIN_EFFICIENCY - efficiency) * 10; 
-    }
-
-    // Kara za duży spadek napięcia (hamowanie generatora)
-    if (voltage_drop > MAX_VOLTAGE_DROP) {
-        reward -= (voltage_drop - MAX_VOLTAGE_DROP) * 20;
-    }
-
-    return reward;
-}
-
-// Function to update Q-value for Agent 3
-void updateQAgent3(int state, int action, float reward, int nextState) {
-    float maxQNextState = qTableAgent3[nextState][0];
-    for (int a = 1; a < NUM_ACTIONS_AGENT3; a++) {
-        if (qTableAgent3[nextState][a] > maxQNextState) {
-            maxQNextState = qTableAgent3[nextState][a];
-        }
-    }
-
-    qTableAgent3[state][action] += learningRate * (reward + discountFactor * maxQNextState - qTableAgent3[state][action]);
 }
 
 
@@ -797,7 +749,9 @@ void loop() {
         voltageDrop = Serial.parseFloat();
     }
 
-    advancedLogData(efficiencyPercent);
+    advancedLogData();
+    delay(1000); // Przykładowe opóźnienie, aby nie logować zbyt często
+
     checkAlarm();
     autoCalibrate();
     energyManagement();
