@@ -20,6 +20,13 @@ const int PIN_EXTERNAL_VOLTAGE_SENSOR_1 = A1;
 const int PIN_EXTERNAL_CURRENT_SENSOR_1 = A2;
 const int PWM_INCREMENT = 10;
  
+
+// Nowa definicja pinów
+const int newPin1 = D10;
+const int newPin2 = D11;
+const int newPin3 = D12;
+const int newPin4 = D13;
+
  // Definicje zmiennych globalnych i stałych
 const float VOLTAGE_SETPOINT = 220.0;
 const float COMPENSATION_FACTOR = 1.0;
@@ -257,12 +264,6 @@ public:
     }
 };
 
-
-// Nowa definicja pinów
-const int newPin1 = D10;
-const int newPin2 = D11;
-const int newPin3 = D12;
-const int newPin4 = D13;
 
 // Definicje zmiennych globalnych
 float voltageIn[2] = {0};
