@@ -127,7 +127,50 @@ void controlTransistors(float voltage, float excitationCurrent) {
     analogWrite(bjtPin2, pwmValueBJT2);
     analogWrite(bjtPin3, pwmValueBJT3);
 }
- 
+
+// Funkcja obliczająca wydajność
+float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
+    float inputPower = voltageIn * currentIn;
+    float outputPower = externalVoltage * externalCurrent;
+
+    if (inputPower == 0) {
+        return 0;
+    }
+
+    return outputPower / inputPower;
+}
+
+// Funkcja oceniająca próg
+float evaluateThreshold(float threshold) {
+    LOAD_THRESHOLD = threshold;
+    // Implementacja funkcji oceniającej
+    // Zwraca wartość oceny dla danego progu
+    return threshold; // Przykładowa implementacja
+}
+
+// Funkcja wspinania się na wzniesienie do optymalizacji progu
+float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
+    float currentScore = evaluate(currentThreshold);
+    float bestThreshold = currentThreshold;
+    float bestScore = currentScore;
+
+    float newThreshold = currentThreshold + stepSize;
+    float newScore = evaluate(newThreshold);
+    if (newScore > bestScore) {
+        bestThreshold = newThreshold;
+        bestScore = newScore;
+    } else {
+        newThreshold = currentThreshold - stepSize;
+        newScore = evaluate(newThreshold);
+        if (newScore > bestScore) {
+            bestThreshold = newThreshold;
+            bestScore = newScore;
+        }
+    }
+    return bestThreshold;
+}
+
+
 
 
 // Zmienne globalne
@@ -142,17 +185,7 @@ ESP8266WebServer server(80);
 Adafruit_SH1106 display(128, 64, &Wire, -1);
 int lastAction = 0;
 
-// Funkcja obliczająca wydajność
-float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
-    float inputPower = voltageIn * currentIn;
-    float outputPower = externalVoltage * externalCurrent;
 
-    if (inputPower == 0) {
-        return 0;
-    }
-
-    return outputPower / inputPower;
-}
 
 // Tablica Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3];
@@ -493,54 +526,14 @@ int main() {
 
     return 0;
 }
-morek47
 
-
-// Funkcja logująca zaawansowane dane
-void advancedLogData(float efficiencyPercent) {
-    Serial.print("Napięcie: ");
-    Serial.print(voltageIn[0]);
-    Serial.print(" V, Prąd: ");
-    Serial.print(currentIn[0]);
-    Serial.print(" A, Wydajność: ");
-    Serial.print(efficiencyPercent);
-    Serial.println(" %");
-    
-    float power = voltageIn[0] * currentIn[0];
-    Serial.print("Moc: ");
-    Serial.print(power);
-    Serial.println(" W");
-}
-
-// Funkcja wspinania się na wzniesienie do optymalizacji progu
-float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(float)) {
-    float currentScore = evaluate(currentThreshold);
-    float bestThreshold = currentThreshold;
-    float bestScore = currentScore;
-    
-    float newThreshold = currentThreshold + stepSize;
-    float newScore = evaluate(newThreshold);
-    if (newScore > bestScore) {
-        bestThreshold = newThreshold;
-        bestScore = newScore;
-    } else {
-        newThreshold = currentThreshold - stepSize;
-        newScore = evaluate(newThreshold);
-        if (newScore > bestScore) {
-            bestThreshold = newThreshold;
-            bestScore = newScore;
-        }
-    }
-    return bestThreshold;
-}
 
 // Deklaracja zmiennej globalnej
-float LOAD_THRESHOLD;
+float LOAD_THRESHOLD = 0.0;
 
 // Funkcja oceniająca próg
 float evaluateThreshold(float threshold) {
     LOAD_THRESHOLD = threshold;
-    
     float totalEfficiency = 0;
     unsigned long startTime = millis();
     while (millis() - startTime < TEST_DURATION) {
@@ -568,7 +561,7 @@ void advancedLogData() {
     Serial.print("Ostatnia akcja: ");
     Serial.println(lastAction);
 }
-
+morek47
 using System;
 
 class Program
@@ -642,6 +635,11 @@ void setup() {
     voltageDrop = 0.0;
 }
 
+float evaluate(float threshold) {
+    // Implementacja funkcji oceniającej
+    // Zwraca wartość oceny dla danego progu
+    return threshold; // Przykładowa implementacja
+}
 
 
 void selectMuxChannel(int channel) {
@@ -765,7 +763,6 @@ float calculateEfficiency(float voltageIn, float currentIn, float externalVoltag
 
     return outputPower / inputPower;
 }
-
 void loop() {
     handleSerialCommands();
     detectComputerConnection();
@@ -786,6 +783,11 @@ void loop() {
 
     // Odczyt danych z sensorów
     readSensors();
+
+    // Wywołanie funkcji hillClimbing
+    float currentThreshold = 0.5; // Przykładowa wartość początkowa
+    float stepSize = 0.1; // Przykładowy rozmiar kroku
+    float optimizedThreshold = hillClimbing(currentThreshold, stepSize, evaluate);
 
     // Obliczanie efektywności i innych parametrów na podstawie aktualnych danych z sensorów
     efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
@@ -861,7 +863,7 @@ void loop() {
         voltageDrop = Serial.parseFloat();
     }
 
-    advancedLogData();
+    advancedLogData(efficiencyPercent); // Wywołanie funkcji advancedLogData
     delay(1000); // Przykładowe opóźnienie, aby nie logować zbyt często
 
     checkAlarm();
@@ -928,7 +930,7 @@ void adjustMinInputPower(float inputPower) {
         minObservedPower = inputPower;
     }
     if (inputPower > maxObservedPower) {
-        maxObservedPower = inputPower;
+       
     }
 
     // Dostosuj próg na podstawie obserwowanych wartości
