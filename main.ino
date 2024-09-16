@@ -25,6 +25,9 @@ float currentVoltage;
 float currentCurrent;
 const float maxCurrent = 25.0; // Maksymalny prąd w amperach
 
+// Deklaracja zmiennej globalnej
+float LOAD_THRESHOLD = 0.0;
+
 #define NUM_STATE_BINS_ERROR 10
 #define NUM_STATE_BINS_LOAD 10
 #define NUM_STATE_BINS_KP 10
@@ -175,7 +178,6 @@ float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(floa
     return bestThreshold;
 }
 
-
 // Tablica Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3];
 
@@ -278,45 +280,19 @@ public:
         if (rand() % 100 < epsilon * 100) {
             return rand() % NUM_ACTIONS;
         } else {
-            int bestAction = 0;
-            float bestQValue = qTable[state][0][0];
-            for (int a = 1; a < NUM_ACTIONS; a++) {
-                if (qTable[state][a][0] > bestQValue) {
-                    bestQValue = qTable[state][a][0];
-                    bestAction = a;
-                }
-            }
-            return bestAction;
+            auto bestAction = std::max_element(qTable[state], qTable[state] + NUM_ACTIONS, 
+                [](const float* a, const float* b) { return a[0] < b[0]; });
+            return std::distance(qTable[state], bestAction);
         }
     }
 
-    // Funkcja wykonująca akcję
     void executeAction(int action) {
-        switch (action) {
-            case 0:
-                analogWrite(bjtPin1, constrain(analogRead(bjtPin1) + PWM_INCREMENT, 0, 255));
-                break;
-            case 1:
-                analogWrite(bjtPin1, constrain(analogRead(bjtPin1) - PWM_INCREMENT, 0, 255));
-                break;
-            case 2:
-                analogWrite(bjtPin2, constrain(analogRead(bjtPin2) + PWM_INCREMENT, 0, 255));
-                break;
-            case 3:
-                analogWrite(bjtPin2, constrain(analogRead(bjtPin2) - PWM_INCREMENT, 0, 255));
-                break;
-            case 4:
-                analogWrite(bjtPin3, constrain(analogRead(bjtPin3) + PWM_INCREMENT, 0, 255));
-                break;
-            case 5:
-                analogWrite(bjtPin3, constrain(analogRead(bjtPin3) - PWM_INCREMENT, 0, 255));
-                break;
-            default:
-                break;
-        }
+        const int pins[] = {bjtPin1, bjtPin1, bjtPin2, bjtPin2, bjtPin3, bjtPin3};
+        const int increments[] = {PWM_INCREMENT, -PWM_INCREMENT, PWM_INCREMENT, -PWM_INCREMENT, PWM_INCREMENT, -PWM_INCREMENT};
+
+        analogWrite(pins[action], constrain(analogRead(pins[action]) + increments[action], 0, 255));
     }
 
-    // Funkcja obliczająca nagrodę
     float calculateReward(float error, float efficiency, float voltageDrop) {
         float reward = 1.0 / abs(error);
         reward -= voltageDrop * 0.01;
@@ -324,7 +300,6 @@ public:
     }
 
     float reward(float next_observation) {
-        // Implementacja obliczania wspólnej nagrody dla wszystkich agentów
         float napiecie = next_observation;
         float spadek_napiecia = voltageDrop;
         float excitation_current = currentIn[0]; // Przykładowa wartość, dostosuj według potrzeb
@@ -346,21 +321,20 @@ public:
         if (excitation_current > excitation_current_threshold && excitation_current <= 23) { 
             nagroda += COMPENSATION_FACTOR; 
         }
-    }
 
-    // Zaktualizowana funkcja updateQ
-    void updateQ(int state, int action, float reward, int nextState) {
-        float maxQNextState = qTable[nextState][0][0];
-        for (int a = 1; a < NUM_ACTIONS; a++) {
-            if (qTable[nextState][a][0] > maxQNextState) {
-                maxQNextState = qTable[nextState][a][0];
-            }
+        // Dodatkowa nagroda za stabilizację napięcia na poziomie 230V
+        if (abs(napiecie - VOLTAGE_SETPOINT) < 1.0) {
+            nagroda += 10.0; // Przykładowa wartość nagrody, dostosuj według potrzeb
         }
 
-        qTable[state][action][0] += learningRate * (reward + discountFactor * maxQNextState - qTable[state][action][0]);
+        return nagroda;
     }
 
-    // Nowa funkcja monitorująca wydajność i dostosowująca sterowanie
+    void updateQ(int state, int action, float reward, int nextState) {
+        float bestNextQ = *std::max_element(qTable[nextState][0], qTable[nextState][NUM_ACTIONS]);
+        qTable[state][action][0] += learningRate * (reward + discountFactor * bestNextQ - qTable[state][action][0]);
+    }
+
     void monitorPerformanceAndAdjust() {
         static unsigned long lastAdjustmentTime = 0;
         if (millis() - lastAdjustmentTime > 1000) {
@@ -387,6 +361,7 @@ class Agent2 {
 public:
     int akcja;
     float feedbackFromAgent3;
+    float feedbackFromAgent1; // Dodana zmienna
 
     void odbierz_informacje_hamowania(float hamowanie) {
         // Implementacja logiki używającej informacji o hamowaniu
@@ -397,7 +372,7 @@ public:
     }
 
     void odbierz_informacje_od_agenta1(float feedback) {
-        feedbackFromAgent3 = feedback;
+        feedbackFromAgent1 = feedback; // Poprawione przypisanie
     }
 
     void wyslij_informacje_do_agenta3(class Agent3& agent3, class Agent1& agent1) {
@@ -450,18 +425,8 @@ public:
                 }
                 break;
             case 1:
-                if (current - PWM_INCREMENT >= 0) {
-                    analogWrite(PIN_EXCITATION_COIL_1, current - PWM_INCREMENT);
-                }
-                break;
-            case 2:
                 if (current + PWM_INCREMENT <= MAX_CURRENT) {
                     analogWrite(PIN_EXCITATION_COIL_2, current + PWM_INCREMENT);
-                }
-                break;
-            case 3:
-                if (current - PWM_INCREMENT >= 0) {
-                    analogWrite(PIN_EXCITATION_COIL_2, current - PWM_INCREMENT);
                 }
                 break;
             // Dodaj inne przypadki akcji, jeśli są potrzebne
@@ -470,8 +435,17 @@ public:
 
     float reward(float next_observation) {
         // Implementacja wspólnej funkcji nagrody
+        const int TARGET_CURRENT = 25; // Docelowy prąd wzbudzenia w amperach
         float prad_wzbudzenia = next_observation;
-        float nagroda = prad_wzbudzenia; // Nagroda za prąd wzbudzenia w pozostałych przypadkach
+        float nagroda = 0.0;
+
+        // Nagroda za osiągnięcie docelowego prądu wzbudzenia
+        if (prad_wzbudzenia >= TARGET_CURRENT) {
+            nagroda = 100.0; // Duża nagroda za osiągnięcie celu
+        } else {
+            // Kara za mniejszy prąd wzbudzenia
+            nagroda = -abs(TARGET_CURRENT - prad_wzbudzenia);
+        }
 
         // Uwzględnij feedback od Agenta 3
         nagroda += feedbackFromAgent3;
@@ -480,11 +454,34 @@ public:
     }
 };
 
+
+
 class Agent3 {
 public:
     void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
         // Implementacja logiki używającej akcji od Agentów 1 i 2
     }
+
+    void updateQ(int state, int action, float reward, int nextState, float learningRate, float discountFactor) {
+        // Przykładowa implementacja aktualizacji Q-wartości
+        float bestNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS);
+        qTable[state][action] = qTable[state][action] + learningRate * (reward + discountFactor * bestNextQ - qTable[state][action]);
+    }
+
+    void odbierz_informacje_hamowania(float hamowanie) {
+        // Implementacja logiki używającej informacji o hamowaniu
+    }
+
+    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
+        agent2.odbierz_informacje_od_agenta3(feedback);
+    }
+
+    void wyslij_informacje_do_agenta1(class Agent1& agent1, float feedback) {
+        agent1.odbierz_informacje_od_agenta3(feedback);
+    }
+
+private:
+    float qTable[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3] = {0}; // Tablica Q-wartości
 };
 
 int main() {
@@ -492,7 +489,6 @@ int main() {
     Agent2 agent2;
     Agent3 agent3;
 
- 
     float learningRate = 0.1;
     float discountFactor = 0.9;
 
@@ -503,10 +499,12 @@ int main() {
     int nextStates[] = {1, 2, 0};
 
     while (true) {
-        // Aktualizacja Q-wartości dla wszystkich agentów
+        // Aktualizacja Q-wartości dla Agent1 i Agent3
         agent1.updateQ(states[0], actions[0], rewards[0], nextStates[0], learningRate, discountFactor);
-        agent2.updateQ(states[1], actions[1], rewards[1], nextStates[1], learningRate, discountFactor);
         agent3.updateQ(states[2], actions[2], rewards[2], nextStates[2], learningRate, discountFactor);
+
+        // Agent2 działa niezależnie
+        agent2.performIndependentActions();
 
         // Dodaj inne operacje programu tutaj
 
@@ -516,6 +514,8 @@ int main() {
 
     return 0;
 }
+
+
 
 using System;
 
@@ -549,9 +549,6 @@ class Program
         System.Threading.Thread.Sleep(50); // Symulacja czasu treningu
     }
 }
-
-// Deklaracja zmiennej globalnej
-float LOAD_THRESHOLD = 0.0;
 
 // Funkcja oceniająca próg
 float evaluateThreshold(float threshold) {
