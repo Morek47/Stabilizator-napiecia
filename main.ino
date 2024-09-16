@@ -1,3 +1,4 @@
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <Arduino.h>
@@ -7,7 +8,6 @@
 #include <ArduinoEigen.h>
 #include <BayesOptimizer.h>
 
- 
 // Definicje zmiennych globalnych
 float voltageIn[2] = {0};
 float currentIn[2] = {0};
@@ -19,6 +19,11 @@ float voltageDrop = 0.0;
 ESP8266WebServer server(80);
 Adafruit_SH1106 display(128, 64, &Wire, -1);
 int lastAction = 0;
+
+float targetVoltage = 230.0; // Docelowe napięcie 230 V
+float currentVoltage;
+float currentCurrent;
+const float maxCurrent = 25.0; // Maksymalny prąd w amperach
 
 #define NUM_STATE_BINS_ERROR 10
 #define NUM_STATE_BINS_LOAD 10
@@ -50,7 +55,7 @@ const int newPin4 = D13;
 float LOAD_THRESHOLD = 0.5;
 const float COMPENSATION_FACTOR = 0.1;
 const int MAX_EXCITATION_CURRENT = 255;
-const float MAX_VOLTAGE = 5.0;
+const float MAX_VOLTAGE = 230.0;
 const float MIN_VOLTAGE = 0.0;
 
 // Dodane zmienne
@@ -84,8 +89,8 @@ float discountFactor = 0.9;
 const unsigned long OPTIMIZATION_INTERVAL = 60000;
 const unsigned long TEST_DURATION = 10000;
 unsigned long lastOptimizationTime = 0;
- 
- // Zmienne dla optymalizacji bayesowskiej
+
+// Zmienne dla optymalizacji bayesowskiej
 BayesOptimizer optimizer;
 float params[3] = {0.1, 0.9, 0.1};
 float bounds[3][2] = {{0.01, 0.5}, {0.8, 0.99}, {0.01, 0.3}};
@@ -171,22 +176,6 @@ float hillClimbing(float currentThreshold, float stepSize, float(*evaluate)(floa
 }
 
 
-
-
-// Zmienne globalne
-float voltageIn[2] = {0};
-float currentIn[2] = {0};
-float externalVoltage = 0.0;
-float externalCurrent = 0.0;
-float efficiency = 0.0;
-float efficiencyPercent = 0.0;
-float voltageDrop = 0.0;
-ESP8266WebServer server(80);
-Adafruit_SH1106 display(128, 64, &Wire, -1);
-int lastAction = 0;
-
-
-
 // Tablica Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3];
 
@@ -202,33 +191,34 @@ const float MAX_KI = 1.0;
 const float MIN_KD = 0.0;
 const float MAX_KD = 5.0;
 
- // Definicje zmiennych globalnych i stałych
-const float VOLTAGE_SETPOINT = 220.0;
-const float COMPENSATION_FACTOR = 1.0;
-const int NUM_ACTIONS = 4;
-const float epsilon = 0.1;
-const int NUM_STATE_BINS_ERROR = 10;
-const int NUM_STATE_BINS_LOAD = 10;
-const int NUM_STATE_BINS_KP = 10;
-const int NUM_STATE_BINS_KI = 10;
-const int NUM_STATE_BINS_KD = 10;
-const float MIN_ERROR = 0.0;
-const float MAX_ERROR = 1.0;
+// Definicje zmiennych globalnych i stałych
+const float VOLTAGE_SETPOINT = 230.0;
+const float COMPENSATION_FACTOR = 0.1;
+const int NUM_ACTIONS = 6;
+const float epsilon = 0.3;
+const int NUM_STATE_BINS_ERROR = 5;
+const int NUM_STATE_BINS_LOAD = 3;
+const int NUM_STATE_BINS_KP = 5;
+const int NUM_STATE_BINS_KI = 3;
+const int NUM_STATE_BINS_KD = 3;
+const float MIN_ERROR = -230.0;
+const float MAX_ERROR = 230.0;
 const float MIN_LOAD = 0.0;
 const float MAX_LOAD = 1.0;
 const float MIN_KP = 0.0;
-const float MAX_KP = 1.0;
+const float MAX_KP = 5.0;
 const float MIN_KI = 0.0;
 const float MAX_KI = 1.0;
 const float MIN_KD = 0.0;
-const float MAX_KD = 1.0;
-const int PWM_INCREMENT = 1;
-const int PIN_CURRENT_SENSOR = 0;
-const int PIN_EXCITATION_COIL_1 = 1;
-const int PIN_EXCITATION_COIL_2 = 2;
-float qTable[100][NUM_ACTIONS][2]; // Przykładowa tablica Q-wartości
+const float MAX_KD = 5.0;
+const int PWM_INCREMENT = 10;
+const int PIN_CURRENT_SENSOR = A2;
+const int PIN_EXCITATION_COIL_1 = D0;
+const int PIN_EXCITATION_COIL_2 = D1;
+float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3];
 float voltageDrop = 0.0;
-float currentIn[1] = {0.0};
+float currentIn[2] = {0.0, 0.0};
+
 
 // Funkcja regulująca częstotliwość sterowania
 int controlFrequency = 0;
@@ -527,6 +517,38 @@ int main() {
     return 0;
 }
 
+using System;
+
+class Program
+{
+    static void Main()
+    {
+        int totalEpochs = 100; // Całkowita liczba epok
+        int completedEpochs = 0; // Ukończone epoki
+
+        // Symulacja procesu nauki
+        for (int epoch = 1; epoch <= totalEpochs; epoch++)
+        {
+            // Symulacja treningu AI
+            TrainAI(epoch);
+
+            // Aktualizacja ukończonych epok
+            completedEpochs = epoch;
+
+            // Obliczenie postępu w procentach
+            double progress = (double)completedEpochs / totalEpochs * 100;
+
+            // Wyświetlenie postępu
+            Console.WriteLine($"Postęp nauki AI: {progress:F2}%");
+        }
+    }
+
+    static void TrainAI(int epoch)
+    {
+        // Symulacja treningu AI (zastąp rzeczywistym kodem treningu)
+        System.Threading.Thread.Sleep(50); // Symulacja czasu treningu
+    }
+}
 
 // Deklaracja zmiennej globalnej
 float LOAD_THRESHOLD = 0.0;
@@ -561,47 +583,6 @@ void advancedLogData() {
     Serial.print("Ostatnia akcja: ");
     Serial.println(lastAction);
 }
-morek47
-using System;
-
-class Program
-{
-    static void Main()
-    {
-        int totalEpochs = 100; // Całkowita liczba epok
-        int completedEpochs = 0; // Ukończone epoki
-
-        // Symulacja procesu nauki
-        for (int epoch = 1; epoch <= totalEpochs; epoch++)
-        {
-            // Symulacja treningu AI
-            TrainAI(epoch);
-
-            // Aktualizacja ukończonych epok
-            completedEpochs = epoch;
-
-            // Obliczenie postępu w procentach
-            double progress = (double)completedEpochs / totalEpochs * 100;
-
-            // Wyświetlenie postępu
-            Console.WriteLine($"Postęp nauki AI: {progress:F2}%");
-        }
-    }
-
-    static void TrainAI(int epoch)
-    {
-        // Symulacja treningu AI (zastąp rzeczywistym kodem treningu)
-        System.Threading.Thread.Sleep(50); // Symulacja czasu treningu
-    }
-}
-
-
-/ Deklaracje zmiennych globalnych
-float targetVoltage = 5.0; // Docelowe napięcie
-float currentVoltage;
-float currentCurrent;
-const float maxCurrent = 25.0; // Maksymalny prąd w amperach
-
 
 void setup() {
     Serial.begin(115200); // Inicjalizacja portu szeregowego
@@ -615,9 +596,13 @@ void setup() {
     pinMode(bjtPin1, OUTPUT);
     pinMode(bjtPin2, OUTPUT);
     pinMode(bjtPin3, OUTPUT);
+    pinMode(excitationBJT1Pin, OUTPUT);
+    pinMode(excitationBJT2Pin, OUTPUT);
+    pinMode(PIN_CURRENT_SENSOR, INPUT);
 
     server.begin();
-    display.begin();
+    display.begin(SH1106_SWITCHCAPVCC, 0x3C);
+    display.clearDisplay();
     display.display();
 
     optimizer.initialize(3, bounds, 50, 10);
@@ -633,6 +618,16 @@ void setup() {
     efficiency = 0.0;
     efficiencyPercent = 0.0;
     voltageDrop = 0.0;
+
+    // Inicjalizacja WiFi
+    WiFi.begin("SSID", "PASSWORD");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("Łączenie z WiFi...");
+    }
+    Serial.println("Połączono z WiFi");
+    Serial.print("Adres IP: ");
+    Serial.println(WiFi.localIP());
 }
 
 float evaluate(float threshold) {
@@ -641,7 +636,6 @@ float evaluate(float threshold) {
     return threshold; // Przykładowa implementacja
 }
 
-
 void selectMuxChannel(int channel) {
     digitalWrite(muxSelectPinA, channel & 1);
     digitalWrite(muxSelectPinB, (channel >> 1) & 1);
@@ -649,29 +643,29 @@ void selectMuxChannel(int channel) {
 
 // Funkcja odczytu sensorów
 void readSensors() {
-  // Odczyt z czujników napięcia (kanały 0 i 1)
-  for (int i = 0; i < 2; i++) {
-    selectMuxChannel(i);
-    voltageIn[i] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-  }
+    // Odczyt z czujników napięcia (kanały 0 i 1)
+    for (int i = 0; i < 2; i++) {
+        selectMuxChannel(i);
+        voltageIn[i] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    }
 
-  // Odczyt z czujników prądu (kanały 2 i 3)
-  for (int i = 0; i < 2; i++) {
-    selectMuxChannel(i + 2);
+    // Odczyt z czujników prądu (kanały 2 i 3)
+    for (int i = 0; i < 2; i++) {
+        selectMuxChannel(i + 2);
 
-    int raw_current_adc = analogRead(muxInputPin);
+        int raw_current_adc = analogRead(muxInputPin);
 
-    // Obliczanie napięcia wyjściowego czujnika
-    float sensorVoltage = raw_current_adc * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        // Obliczanie napięcia wyjściowego czujnika
+        float sensorVoltage = raw_current_adc * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 
-    // Odejmowanie napięcia spoczynkowego (zakładamy Vcc/2)
-    float voltageOffset = VOLTAGE_REFERENCE / 2;
-    sensorVoltage -= voltageOffset;
+        // Odejmowanie napięcia spoczynkowego (zakładamy Vcc/2)
+        float voltageOffset = VOLTAGE_REFERENCE / 2;
+        sensorVoltage -= voltageOffset;
 
-    // Przeliczanie napięcia na prąd (używając czułości 185 mV/A)
-    const float sensitivity = 0.185; // Dostosuj, jeśli czułość Twoich czujników jest inna
-    currentIn[i] = sensorVoltage / sensitivity;
-  }
+        // Przeliczanie napięcia na prąd (używając czułości 185 mV/A)
+        const float sensitivity = 0.185; // Dostosuj, jeśli czułość Twoich czujników jest inna
+        currentIn[i] = sensorVoltage / sensitivity;
+    }
 }
 
 // Funkcja sprawdzania alarmów
@@ -718,7 +712,6 @@ void displayData(float efficiencyPercent) {
     display.println(" %");
     display.display();
 }
-
 
 
 
