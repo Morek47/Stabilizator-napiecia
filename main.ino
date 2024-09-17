@@ -62,6 +62,45 @@ const int MAX_EXCITATION_CURRENT = 255;
 const float MAX_VOLTAGE = 230.0;
 const float MIN_VOLTAGE = 0.0;
 
+float simulateSystem(float Kp, float Ki, float Kd) {
+    // Przykładowe zmienne symulacji
+    float setpoint = 230.0; // Docelowe napięcie
+    float currentVoltage = 0.0;
+    float currentError = 0.0;
+    float previousError = 0.0;
+    float integral = 0.0;
+    float derivative = 0.0;
+    float controlSignal = 0.0;
+    float simulatedEfficiency = 0.0;
+    int simulationSteps = 100; // Liczba kroków symulacji
+
+    for (int i = 0; i < simulationSteps; i++) {
+        // Obliczanie błędu
+        currentError = setpoint - currentVoltage;
+
+        // Obliczanie całki
+        integral += currentError;
+
+        // Obliczanie pochodnej
+        derivative = currentError - previousError;
+
+        // Obliczanie sygnału sterującego
+        controlSignal = Kp * currentError + Ki * integral + Kd * derivative;
+
+        // Aktualizacja napięcia (przykładowa symulacja)
+        currentVoltage += controlSignal * 0.1; // Współczynnik skalujący
+
+        // Aktualizacja poprzedniego błędu
+        previousError = currentError;
+
+        // Przykładowa wydajność (możesz dostosować do swojego systemu)
+        simulatedEfficiency = 1.0 - abs(currentError / setpoint);
+    }
+
+    return simulatedEfficiency;
+}
+
+
 // Dodane zmienne
 const float Kp_max = 5.0;
 float previousVoltage = 0.0;
@@ -173,6 +212,183 @@ void handleSerialCommands() {
     }
 }
 
+void optimizePID() {
+    // Ustawienia początkowe
+    float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
+    float Tu = 0.0; // Okres oscylacji
+    bool oscillationsDetected = false;
+    unsigned long startTime = millis();
+    unsigned long currentTime;
+    float previousError = 0.0;
+    float currentError;
+    float maxError = 0.0;
+    float minError = 0.0;
+
+    // Wstępne ustawienia PID
+    Kp = 1.0;
+    Ki = 0.0;
+    Kd = 0.0;
+
+    // Wprowadzenie oscylacji
+    while (!oscillationsDetected && (millis() - startTime) < TUNING_TIMEOUT) {
+        currentTime = millis();
+        currentError = VOLTAGE_SETPOINT - currentVoltage;
+
+        // Sprawdzenie oscylacji
+        if (currentError > maxError) {
+            maxError = currentError;
+        }
+        if (currentError < minError) {
+            minError = currentError;
+        }
+
+        // Wykrywanie oscylacji
+        if ((maxError - minError) > 0.1) {
+            oscillationsDetected = true;
+            Tu = (currentTime - startTime) / 1000.0; // Okres oscylacji w sekundach
+            Ku = 4.0 * (VOLTAGE_SETPOINT / (maxError - minError));
+        }
+
+        // Aktualizacja sterowania
+        float controlSignal = Kp * currentError;
+        analogWrite(mosfetPin, constrain(controlSignal, 0, 255));
+
+        delay(100); // Opóźnienie dla stabilizacji
+    }
+
+      // Ustawienia PID na podstawie metody Zieglera-Nicholsa
+    if (oscillationsDetected) {
+        Kp = 0.6 * Ku;
+        Ki = 2 * Kp / Tu;
+        Kd = Kp * Tu / 8;
+        Serial.println("Optymalizacja PID zakończona:");
+        Serial.print("Kp: "); Serial.println(Kp);
+        Serial.print("Ki: "); Serial.println(Ki);
+        Serial.print("Kd: "); Serial.println(Kd);
+
+        // Zapisz najlepsze parametry w pamięci EEPROM
+        savePIDParams(Kp, Ki, Kd);
+
+        // Wyślij najlepsze parametry do komputera
+        Serial.print("Zapisane parametry PID: Kp="); Serial.print(Kp);
+        Serial.print(", Ki="); Serial.print(Ki);
+        Serial.print(", Kd="); Serial.println(Kd);
+    }
+}
+
+void savePIDParams(float Kp, float Ki, float Kd) {
+    EEPROM.put(0, Kp);
+    EEPROM.put(sizeof(float), Ki);
+    EEPROM.put(2 * sizeof(float), Kd);
+    EEPROM.commit();
+}
+
+void loadPIDParams(float &Kp, float &Ki, float &Kd) {
+    EEPROM.get(0, Kp);
+    EEPROM.get(sizeof(float), Ki);
+    EEPROM.get(2 * sizeof(float), Kd);
+    EEPROM.commit();
+}
+// Wczytaj parametry PID z pamięci EEPROM podczas uruchamiania
+void setup() {
+    EEPROM.begin(512); // Inicjalizacja pamięci EEPROM
+    loadPIDParams(Kp, Ki, Kd);
+    Serial.begin(115200);
+    // Inne inicjalizacje...
+}
+
+// Funkcja optymalizacji PID z zapisywaniem wyników
+void optimizePID() {
+    // Ustawienia początkowe
+    float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
+    float Tu = 0.0; // Okres oscylacji
+    bool oscillationsDetected = false;
+    unsigned long startTime = millis();
+    unsigned long currentTime;
+    float previousError = 0.0;
+    float currentError;
+    float maxError = 0.0;
+    float minError = 0.0;
+
+    // Wstępne ustawienia PID
+    Kp = 1.0;
+    Ki = 0.0;
+    Kd = 0.0;
+
+    // Wprowadzenie oscylacji
+    while (!oscillationsDetected && (millis() - startTime) < TUNING_TIMEOUT) {
+        currentTime = millis();
+        currentError = VOLTAGE_SETPOINT - currentVoltage;
+
+        // Sprawdzenie oscylacji
+        if (currentError > maxError) {
+            maxError = currentError;
+        }
+        if (currentError < minError) {
+            minError = currentError;
+        }
+
+        // Wykrywanie oscylacji
+        if ((maxError - minError) > 0.1) {
+            oscillationsDetected = true;
+            Tu = (currentTime - startTime) / 1000.0; // Okres oscylacji w sekundach
+            Ku = 4.0 * (VOLTAGE_SETPOINT / (maxError - minError));
+        }
+
+        // Aktualizacja sterowania
+        float controlSignal = Kp * currentError;
+        analogWrite(mosfetPin, constrain(controlSignal, 0, 255));
+
+        delay(100); // Opóźnienie dla stabilizacji
+    }
+
+    // Ustawienia PID na podstawie metody Zieglera-Nicholsa
+    if (oscillationsDetected) {
+        Kp = 0.6 * Ku;
+        Ki = 2 * Kp / Tu;
+        Kd = Kp * Tu / 8;
+        Serial.println("Optymalizacja PID zakończona:");
+        Serial.print("Kp: "); Serial.println(Kp);
+        Serial.print("Ki: "); Serial.println(Ki);
+        Serial.print("Kd: "); Serial.println(Kd);
+
+        // Zapisz najlepsze parametry w pamięci EEPROM
+        savePIDParams(Kp, Ki, Kd);
+
+        // Wyślij najlepsze parametry do komputera
+        Serial.print("Zapisane parametry PID: Kp="); Serial.print(Kp);
+        Serial.print(", Ki="); Serial.print(Ki);
+        Serial.print(", Kd="); Serial.println(Kd);
+    }
+}
+
+// Wczytaj parametry PID z pamięci EEPROM podczas uruchamiania
+void setup() {
+    EEPROM.begin(512); // Inicjalizacja pamięci EEPROM
+    loadPIDParams(Kp, Ki, Kd);
+    Serial.begin(115200);
+    // Inne inicjalizacje...
+}
+// Funkcja odczytywania parametrów PID z pamięci EEPROM
+void loadPIDParams(float &Kp, float &Ki, float &Kd) {
+    EEPROM.get(0, Kp);
+    EEPROM.get(sizeof(float), Ki);
+    EEPROM.get(2 * sizeof(float), Kd);
+}
+
+// Funkcja zapisywania parametrów PID w pamięci EEPROM
+void savePIDParams(float Kp, float Ki, float Kd) {
+    EEPROM.put(0, Kp);
+    EEPROM.put(sizeof(float), Ki);
+    EEPROM.put(2 * sizeof(float), Kd);
+}
+// Funkcja zapisywania parametrów PID w pamięci EEPROM
+void savePIDParams(float Kp, float Ki, float Kd) {
+    EEPROM.put(0, Kp);
+    EEPROM.put(sizeof(float), Ki);
+    EEPROM.put(2 * sizeof(float), Kd);
+    EEPROM.commit();
+}
 void optimizePID() {
     // Ustawienia początkowe
     float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
@@ -767,6 +983,14 @@ int main() {
 
 
 
+// Przypisz testowe wartości do używanych zmiennych raz na starcie
+static bool initialized = false;
+if (!initialized) {
+    epsilon = testEpsilon;
+    learningRate = testLearningRate;
+    discountFactor = testDiscountFactor;
+    initialized = true;
+}
 using System;
 
 class Program
@@ -833,6 +1057,28 @@ void detectComputerConnection() {
 #include <SoftwareSerial.h>
 SoftwareSerial mySerial(10, 11); // RX, TX
 
+void updateOptimizer() {
+    unsigned long currentTime = millis();
+    if (currentTime - lastOptimizationTime >= OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = currentTime;
+
+        // Pobierz nowe parametry z optymalizatora
+        optimizer.getNextParams(params);
+
+        // Oblicz wydajność dla nowych parametrów
+        float averageEfficiency = objectiveFunction(params);
+
+        // Zaktualizuj optymalizator z nowymi parametrami i uzyskaną wydajnością
+        optimizer.update(params, averageEfficiency);
+
+        // Sprawdź, czy uzyskana wydajność jest najlepsza
+        if (averageEfficiency > bestEfficiency) {
+            bestEfficiency = averageEfficiency;
+            // Zapisz najlepsze parametry
+            // Możesz dodać kod do zapisu najlepszych parametrów
+        }
+    }
+}
 void setup() {
     mySerial.begin(9600);
     Serial.begin(115200); // Inicjalizacja portu szeregowego
@@ -840,6 +1086,25 @@ void setup() {
         ; // Czekaj na połączenie z komputerem
     }
     detectComputerConnection(); // Wykryj połączenie z komputerem i rozpocznij przenoszenie mocy obliczeniowej
+
+    // Inicjalizacja optymalizatora
+    optimizer.setBounds(bounds);
+    optimizer.setObjectiveFunction(objectiveFunction);
+    optimizer.setInitialParams(params);
+}
+
+float objectiveFunction(const float* params) {
+    // Przypisanie parametrów PID
+    float Kp = params[0];
+    float Ki = params[1];
+    float Kd = params[2];
+
+    // Symulacja lub rzeczywiste testowanie wydajności systemu
+    // Tutaj zakładamy, że mamy funkcję `simulateSystem` która zwraca wydajność
+    float efficiency = simulateSystem(Kp, Ki, Kd);
+
+    return efficiency;
+}
 
     // Inicjalizacja pinów i innych komponentów
     pinMode(muxSelectPinA, OUTPUT);
@@ -1097,6 +1362,33 @@ void loop() {
         discountFactor = testDiscountFactor;
         initialized = true;
     }
+
+    unsigned long currentTime = millis();
+
+    // Sprawdzenie, czy nadszedł czas na optymalizację
+    if (currentTime - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
+        lastOptimizationTime = currentTime;
+
+        // Wykonanie kroku optymalizacji
+        optimizer.optimize();
+
+        // Pobranie najlepszych parametrów
+        optimizer.getBestParams(params);
+        bestEfficiency = -optimizer.getBestObjective();
+
+        // Aktualizacja parametrów PID
+        Kp = params[0];
+        Ki = params[1];
+        Kd = params[2];
+
+        Serial.println("Optymalizacja zakończona:");
+        Serial.print("Kp: "); Serial.println(Kp);
+        Serial.print("Ki: "); Serial.println(Ki);
+        Serial.print("Kd: "); Serial.println(Kd);
+        Serial.print("Wydajność: "); Serial.println(bestEfficiency);
+    }
+}
+
 
     // Odczyt danych z sensorów
     readSensors();
