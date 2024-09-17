@@ -26,16 +26,7 @@ float currentCurrent;
 const float maxCurrent = 25.0; // Maksymalny prąd w amperach
 
 // Deklaracja zmiennej globalnej
-float LOAD_THRESHOLD = 0.0;
-
-#define NUM_STATE_BINS_ERROR 10
-#define NUM_STATE_BINS_LOAD 10
-#define NUM_STATE_BINS_KP 10
-#define NUM_STATE_BINS_KI 10
-#define NUM_STATE_BINS_KD 10
-#define NUM_ACTIONS 5
-#define NUM_STATES_AGENT3 100
-#define NUM_ACTIONS_AGENT3 5
+float LOAD_THRESHOLD = 0.5; // Upewniono się, że jest zdefiniowana tylko raz
 
 // Definicje pinów dla tranzystorów
 const int mosfetPin = D4;
@@ -48,14 +39,7 @@ const int PIN_EXTERNAL_VOLTAGE_SENSOR_1 = A1;
 const int PIN_EXTERNAL_CURRENT_SENSOR_1 = A2;
 const int PWM_INCREMENT = 10;
 
-// Nowa definicja pinów
-const int newPin1 = D10;
-const int newPin2 = D11;
-const int newPin3 = D12;
-const int newPin4 = D13;
-
 // Stałe konfiguracyjne
-float LOAD_THRESHOLD = 0.5;
 const float COMPENSATION_FACTOR = 0.1;
 const int MAX_EXCITATION_CURRENT = 255;
 const float MAX_VOLTAGE = 230.0;
@@ -82,7 +66,6 @@ const int NUM_STATE_BINS_LOAD = 3;
 const int NUM_STATE_BINS_KP = 5;
 const int NUM_STATE_BINS_KI = 3;
 const int NUM_STATE_BINS_KD = 3;
-
 const int NUM_ACTIONS = 6;
 float epsilon = 0.3;
 float learningRate = 0.1;
@@ -113,9 +96,22 @@ const int ADC_MAX_VALUE = 1023;
 float VOLTAGE_SETPOINT = 230.0;
 const float VOLTAGE_REGULATION_HYSTERESIS = 0.1;
 
+// Nowa definicja pinów
+const int newPin1 = D10;
+const int newPin2 = D11;
+const int newPin3 = D12;
+const int newPin4 = D13;
+
+// Funkcja ograniczająca dla wartości float
+float constrainFloat(float value, float min, float max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
 // Funkcja sterowania tranzystorami
 void controlTransistors(float voltage, float excitationCurrent) {
-    voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+    voltage = constrainFloat(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
 
     if (excitationCurrent > LOAD_THRESHOLD) {
         digitalWrite(mosfetPin, HIGH);
@@ -148,12 +144,16 @@ float calculateEfficiency(float voltageIn, float currentIn, float externalVoltag
     return outputPower / inputPower;
 }
 
-// Funkcja oceniająca próg
+// Funkcja oceniająca próg z opóźnieniem
 float evaluateThreshold(float threshold) {
     LOAD_THRESHOLD = threshold;
-    // Implementacja funkcji oceniającej
-    // Zwraca wartość oceny dla danego progu
-    return threshold; // Przykładowa implementacja
+    float totalEfficiency = 0;
+    unsigned long startTime = millis();
+    while (millis() - startTime < TEST_DURATION) {
+        totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        delay(10); // Dodano opóźnienie, aby nie zablokować działania programu
+    }
+    return totalEfficiency / (TEST_DURATION / 100);
 }
 
 // Funkcja wspinania się na wzniesienie do optymalizacji progu
@@ -195,32 +195,9 @@ const float MAX_KD = 5.0;
 
 // Definicje zmiennych globalnych i stałych
 const float VOLTAGE_SETPOINT = 230.0;
-const float COMPENSATION_FACTOR = 0.1;
-const int NUM_ACTIONS = 6;
-const float epsilon = 0.3;
-const int NUM_STATE_BINS_ERROR = 5;
-const int NUM_STATE_BINS_LOAD = 3;
-const int NUM_STATE_BINS_KP = 5;
-const int NUM_STATE_BINS_KI = 3;
-const int NUM_STATE_BINS_KD = 3;
-const float MIN_ERROR = -230.0;
-const float MAX_ERROR = 230.0;
-const float MIN_LOAD = 0.0;
-const float MAX_LOAD = 1.0;
-const float MIN_KP = 0.0;
-const float MAX_KP = 5.0;
-const float MIN_KI = 0.0;
-const float MAX_KI = 1.0;
-const float MIN_KD = 0.0;
-const float MAX_KD = 5.0;
-const int PWM_INCREMENT = 10;
-const int PIN_CURRENT_SENSOR = A2;
-const int PIN_EXCITATION_COIL_1 = D0;
-const int PIN_EXCITATION_COIL_2 = D1;
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3];
 float voltageDrop = 0.0;
 float currentIn[2] = {0.0, 0.0};
-
 
 // Funkcja regulująca częstotliwość sterowania
 int controlFrequency = 0;
@@ -232,7 +209,6 @@ int constrain(int value, int min, int max) {
     if (value > max) return max;
     return value;
 }
-
 
 int analogRead(int pin) {
     // Implementacja odczytu analogowego, dostosuj według potrzeb
@@ -265,7 +241,7 @@ public:
         float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
         float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
         float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
-        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MAX_KD);
+        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
 
         int errorBin = constrain((int)(normalizedError * NUM_STATE_BINS_ERROR), 0, NUM_STATE_BINS_ERROR - 1);
         int loadBin = constrain((int)(normalizedLoad * NUM_STATE_BINS_LOAD), 0, NUM_STATE_BINS_LOAD - 1);
@@ -349,13 +325,12 @@ public:
                 excitationGain -= 0.1;
             }
 
-            excitationGain = constrain(excitationGain, 0.0, 1.0);
+            excitationGain = constrainFloat(excitationGain, 0.0, 1.0);
 
             lastAdjustmentTime = millis();
         }
     }
 };
-
 
 class Agent2 {
 public:
@@ -367,7 +342,7 @@ public:
         // Implementacja logiki używającej informacji o hamowaniu
     }
 
-    void odbierz_informacje_od_agenta3(float feedback) {
+    void odbierz_informacje_od_agent3(float feedback) {
         feedbackFromAgent3 = feedback;
     }
 
@@ -454,8 +429,6 @@ public:
     }
 };
 
-
-
 class Agent3 {
 public:
     void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
@@ -473,11 +446,11 @@ public:
     }
 
     void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
-        agent2.odbierz_informacje_od_agenta3(feedback);
+        agent2.odbierz_informacje_od_agent3(feedback);
     }
 
     void wyslij_informacje_do_agenta1(class Agent1& agent1, float feedback) {
-        agent1.odbierz_informacje_od_agenta3(feedback);
+        agent1.odbierz_informacje_od_agent3(feedback);
     }
 
 private:
@@ -515,41 +488,6 @@ int main() {
     return 0;
 }
 
-
-
-using System;
-
-class Program
-{
-    static void Main()
-    {
-        int totalEpochs = 100; // Całkowita liczba epok
-        int completedEpochs = 0; // Ukończone epoki
-
-        // Symulacja procesu nauki
-        for (int epoch = 1; epoch <= totalEpochs; epoch++)
-        {
-            // Symulacja treningu AI
-            TrainAI(epoch);
-
-            // Aktualizacja ukończonych epok
-            completedEpochs = epoch;
-
-            // Obliczenie postępu w procentach
-            double progress = (double)completedEpochs / totalEpochs * 100;
-
-            // Wyświetlenie postępu
-            Console.WriteLine($"Postęp nauki AI: {progress:F2}%");
-        }
-    }
-
-    static void TrainAI(int epoch)
-    {
-        // Symulacja treningu AI (zastąp rzeczywistym kodem treningu)
-        System.Threading.Thread.Sleep(50); // Symulacja czasu treningu
-    }
-}
-
 // Funkcja oceniająca próg
 float evaluateThreshold(float threshold) {
     LOAD_THRESHOLD = threshold;
@@ -557,11 +495,12 @@ float evaluateThreshold(float threshold) {
     unsigned long startTime = millis();
     while (millis() - startTime < TEST_DURATION) {
         totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+        delay(10); // Dodano opóźnienie, aby nie zablokować działania programu
     }
     return totalEfficiency / (TEST_DURATION / 100);
 }
 
-void advancedLogData() {
+void advancedLogData(float efficiencyPercent) {
     // Przykładowe logowanie danych
     Serial.print("Napięcie wejściowe: ");
     Serial.println(voltageIn[0]);
@@ -625,12 +564,6 @@ void setup() {
     Serial.println("Połączono z WiFi");
     Serial.print("Adres IP: ");
     Serial.println(WiFi.localIP());
-}
-
-float evaluate(float threshold) {
-    // Implementacja funkcji oceniającej
-    // Zwraca wartość oceny dla danego progu
-    return threshold; // Przykładowa implementacja
 }
 
 void selectMuxChannel(int channel) {
@@ -710,8 +643,6 @@ void displayData(float efficiencyPercent) {
     display.display();
 }
 
-
-
 void handleSerialCommands() {
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
@@ -741,18 +672,50 @@ void adjustControlFrequency() {
         }
         lastAdjustmentTime = millis();
     }
+}
 
-// Definicja funkcji obliczającej wydajność
-float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
-    float inputPower = voltageIn * currentIn;
-    float outputPower = externalVoltage * externalCurrent;
+// Funkcja monitorująca tranzystory
+void monitorTransistors() {
+    const int tranzystorPins[3] = {bjtPin1, bjtPin2, bjtPin3};
+    for (int i = 0; i < 3; i++) {
+        int state = digitalRead(tranzystorPins[i]);
+        if (state == LOW) {
+            Serial.print("Tranzystor ");
+            Serial.print(i);
+            Serial.println(" jest wyłączony.");
+        } else {
+            Serial.print("Tranzystor ");
+            Serial.print(i);
+            Serial.println(" jest włączony.");
+        }
+    }
+}
 
-    if (inputPower == 0) {
-        return 0;
+// Funkcja do automatycznego dostosowywania progu (umieszczona poza pętlą loop)
+void adjustMinInputPower(float inputPower) {
+    static float minObservedPower = 1e-6;
+    static float maxObservedPower = 1e-3;
+
+    // Aktualizuj minimalną i maksymalną obserwowaną moc
+    if (inputPower > 0 && inputPower < minObservedPower) {
+        minObservedPower = inputPower;
+    }
+    if (inputPower > maxObservedPower) {
+        // Można dodać logikę do aktualizacji maxObservedPower
     }
 
-    return outputPower / inputPower;
+    // Dostosuj próg na podstawie obserwowanych wartości
+    minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
 }
+
+void detectComputerConnection() {
+    if (Serial) {
+        Serial.println("Komputer podłączony. Przenoszenie mocy obliczeniowej...");
+        // Wyślij komendę do komputera, aby rozpocząć przenoszenie mocy obliczeniowej
+        Serial.println("START_COMPUTE");
+    }
+}
+
 void loop() {
     handleSerialCommands();
     detectComputerConnection();
@@ -777,7 +740,7 @@ void loop() {
     // Wywołanie funkcji hillClimbing
     float currentThreshold = 0.5; // Przykładowa wartość początkowa
     float stepSize = 0.1; // Przykładowy rozmiar kroku
-    float optimizedThreshold = hillClimbing(currentThreshold, stepSize, evaluate);
+    float optimizedThreshold = hillClimbing(currentThreshold, stepSize, evaluateThreshold);
 
     // Obliczanie efektywności i innych parametrów na podstawie aktualnych danych z sensorów
     efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
@@ -837,100 +800,4 @@ void loop() {
     // Display data on the screen
     displayData(efficiencyPercent);
 
-    // Adjust control frequency
-    adjustControlFrequency();
-
-    // Monitor transistors
-    monitorTransistors();
-
-    // Monitor performance and adjust control
-    monitorPerformanceAndAdjust();
-
-    // Communication with the computer
-    if (Serial.available() > 0) {
-        efficiency = Serial.parseFloat();
-        efficiencyPercent = efficiency * 100.0;
-        voltageDrop = Serial.parseFloat();
-    }
-
-    advancedLogData(efficiencyPercent); // Wywołanie funkcji advancedLogData
-    delay(1000); // Przykładowe opóźnienie, aby nie logować zbyt często
-
-    checkAlarm();
-    autoCalibrate();
-    energyManagement();
-
-    // Q-learning 1 (voltage stabilizer)
-    int state1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    int action1 = chooseAction(state1);
-    executeAction(action1);
-    float reward1 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    int nextState1 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    updateQ(state1, action1, reward1, nextState1);
-
-    // Q-learning 2 (excitation coils)
-    int state2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    int action2 = chooseAction(state2);
-    executeAction(action2);
-    float reward2 = calculateReward(VOLTAGE_SETPOINT - voltageIn[0], efficiency, voltageDrop);
-    int nextState2 = discretizeState(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0], Kp, Ki, Kd);
-    updateQ(state2, action2, reward2, nextState2);
-
-    // Q-learning 3 (generator braking)
-    float power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
-    int state3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
-    int action3 = chooseActionAgent3(state3);
-    executeActionAgent3(action3);
-
-    // Przekazujemy wszystkie 4 argumenty do funkcji calculateRewardAgent3
-    float reward3 = calculateRewardAgent3(efficiency, voltageIn[0], voltageDrop, power_output); 
-
-    int nextState3 = discretizeStateAgent3(VOLTAGE_SETPOINT - voltageIn[0], currentIn[0]);
-    updateQAgent3(state3, action3, reward3, nextState3);
-
-    // Dostosuj minimalny próg mocy wejściowej - dodane tutaj
-    float inputPower = voltageIn[0] * currentIn[0];
-    adjustMinInputPower(inputPower);
-}
-
-// Funkcja monitorująca tranzystory
-void monitorTransistors() {
-    const int tranzystorPins[3] = {bjtPin1, bjtPin2, bjtPin3};
-    for (int i = 0; i < 3; i++) {
-        int state = digitalRead(tranzystorPins[i]);
-        if (state == LOW) {
-            Serial.print("Tranzystor ");
-            Serial.print(i);
-            Serial.println(" jest wyłączony.");
-        } else {
-            Serial.print("Tranzystor ");
-            Serial.print(i);
-            Serial.println(" jest włączony.");
-        }
-    }
-}
-
-// Funkcja do automatycznego dostosowywania progu (umieszczona poza pętlą loop)
-void adjustMinInputPower(float inputPower) {
-    static float minObservedPower = 1e-6;
-    static float maxObservedPower = 1e-3;
-
-    // Aktualizuj minimalną i maksymalną obserwowaną moc
-    if (inputPower > 0 && inputPower < minObservedPower) {
-        minObservedPower = inputPower;
-    }
-    if (inputPower > maxObservedPower) {
-       
-    }
-
-    // Dostosuj próg na podstawie obserwowanych wartości
-    minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
-}
-
-void detectComputerConnection() {
-    if (Serial) {
-        Serial.println("Komputer podłączony. Przenoszenie mocy obliczeniowej...");
-        // Wyślij komendę do komputera, aby rozpocząć przenoszenie mocy obliczeniowej
-        Serial.println("START_COMPUTE");
-    }
-}
+    //
