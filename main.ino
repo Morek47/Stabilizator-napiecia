@@ -20,6 +20,11 @@ ESP8266WebServer server(80);
 Adafruit_SH1106 display(128, 64, &Wire, -1);
 int lastAction = 0;
 
+// Definicje zmiennych globalnych dla PID
+float Kp = 2.0, Ki = 0.5, Kd = 1.0;
+const float Kp_max = 5.0;
+
+
 float VOLTAGE_SETPOINT = 230.0; // Docelowe napięcie 230 V
 float currentVoltage;
 float currentCurrent;
@@ -122,8 +127,36 @@ void trainAgent1() {
 // Funkcja wykonująca akcję agenta 1
 void performActionAgent1(float action) {
     // Implementacja akcji agenta
-    // Dodaj tutaj kod wykonujący akcję agenta 1 na podstawie wartości action
+    switch ((int)action) {
+        case 0:
+            Kp += 0.1;
+            break;
+        case 1:
+            Kp -= 0.1;
+            break;
+        case 2:
+            Ki += 0.1;
+            break;
+        case 3:
+            Ki -= 0.1;
+            break;
+        case 4:
+            Kd += 0.1;
+            break;
+        case 5:
+            Kd -= 0.1;
+            break;
+        default:
+            // Nieznana akcja
+            break;
+    }
+
+    // Upewnij się, że wartości PID są w odpowiednich zakresach
+    Kp = constrain(Kp, 0.0, Kp_max);
+    Ki = constrain(Ki, 0.0, Kp_max);
+    Kd = constrain(Kd, 0.0, Kp_max);
 }
+
 
 // Definicje pinów dla tranzystorów
 const int mosfetPin = D4;
@@ -344,20 +377,20 @@ void optimizePID() {
 }
 
 
-
 // Funkcja zapisywania lub odczytywania parametrów PID w pamięci EEPROM
 void handlePIDParams(float &Kp, float &Ki, float &Kd, bool save) {
     if (save) {
-        EEPROM.put(0, Kp);
-        EEPROM.put(sizeof(float), Ki);
-        EEPROM.put(2 * sizeof(float), Kd);
-        EEPROM.commit();
+        EEPROM.put(0, Kp); // Zapisz wartość Kp na początku pamięci EEPROM
+        EEPROM.put(sizeof(float), Ki); // Zapisz wartość Ki po Kp
+        EEPROM.put(2 * sizeof(float), Kd); // Zapisz wartość Kd po Ki
+        EEPROM.commit(); // Zatwierdź zmiany w pamięci EEPROM
     } else {
-        EEPROM.get(0, Kp);
-        EEPROM.get(sizeof(float), Ki);
-        EEPROM.get(2 * sizeof(float), Kd);
+        EEPROM.get(0, Kp); // Odczytaj wartość Kp z początku pamięci EEPROM
+        EEPROM.get(sizeof(float), Ki); // Odczytaj wartość Ki po Kp
+        EEPROM.get(2 * sizeof(float), Kd); // Odczytaj wartość Kd po Ki
     }
 }
+
 
 // Funkcja optymalizacji PID z zapisywaniem wyników
 void optimizePID() {
@@ -427,27 +460,8 @@ void optimizePID() {
 }
 
 // Wczytaj parametry PID z pamięci EEPROM podczas uruchamiania
-void setup() {
-    EEPROM.begin(512); // Inicjalizacja pamięci EEPROM
-    handlePIDParams(Kp, Ki, Kd, false);
-    Serial.begin(115200);
-    // Inne inicjalizacje...
-}
 
-// Funkcja odczytywania parametrów PID z pamięci EEPROM
-void loadPIDParams(float &Kp, float &Ki, float &Kd) {
-    EEPROM.get(0, Kp);
-    EEPROM.get(sizeof(float), Ki);
-    EEPROM.get(2 * sizeof(float), Kd);
-}
 
-// Funkcja zapisywania parametrów PID w pamięci EEPROM
-void savePIDParams(float Kp, float Ki, float Kd) {
-    EEPROM.put(0, Kp);
-    EEPROM.put(sizeof(float), Ki);
-    EEPROM.put(2 * sizeof(float), Kd);
-    EEPROM.commit();
-}
 
 
 
@@ -457,19 +471,6 @@ void savePIDParams(float Kp, float Ki, float Kd) {
     return ::analogRead(pin);
 }
 
-void analogWrite(int pin, int value) {
-    // Implementacja zapisu analogowego
-    // W przypadku ESP8266, używamy funkcji analogWrite z biblioteki Arduino
-    ::analogWrite(pin, value);
-}
-
-void regulateControlFrequency(bool highFrequency) {
-    if (highFrequency) {
-        controlFrequency = HIGH_FREQUENCY;
-    } else {
-        controlFrequency = LOW_FREQUENCY;
-    }
-}
 
 // Inicjalizacja tablicy Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3] = {0};
@@ -524,7 +525,7 @@ void qLearningAgent3() {
     float error = VOLTAGE_SETPOINT - currentVoltage;
     float load = currentIn[0]; // Przykładowe obciążenie
     int stateIndex = getStateIndex(error, load, Kp, Ki, Kd);
-    int action = chooseAction(stateIndex);
+    int action = chooseAction(stateIndex, qTableAgent3, epsilon);
 
     // Wykonanie akcji (przykładowa implementacja)
     switch (action) {
@@ -1062,6 +1063,7 @@ void updateOptimizer() {
     }
 }
 
+
 void setup() {
     Serial.begin(115200); // Inicjalizacja portu szeregowego
     while (!Serial) {
@@ -1085,15 +1087,27 @@ void setup() {
     pinMode(bjtPin3, OUTPUT);
     pinMode(excitationBJT1Pin, OUTPUT);
     pinMode(excitationBJT2Pin, OUTPUT);
-    pinMode(PIN_CURRENT_SENSOR, INPUT);
+    pinMode(PIN_EXTERNAL_VOLTAGE_SENSOR_1, INPUT);
+    pinMode(PIN_EXTERNAL_CURRENT_SENSOR_1, INPUT);
+    pinMode(newPin1, OUTPUT);
+    pinMode(newPin2, OUTPUT);
+    pinMode(newPin3, OUTPUT);
+    pinMode(newPin4, OUTPUT);
 
+    // Inicjalizacja serwera
     server.begin();
+
+    // Inicjalizacja wyświetlacza
     display.begin(SH1106_SWITCHCAPVCC, 0x3C);
     display.clearDisplay();
     display.display();
+    delay(2000);
+    display.clearDisplay();
 
+    // Inicjalizacja optymalizatora
     optimizer.initialize(3, bounds, 50, 10);
 
+    // Wyświetlenie wiadomości powitalnej
     char buffer[64];
     strcpy_P(buffer, welcomeMessage);
     display.println(buffer);
@@ -1109,7 +1123,7 @@ void setup() {
     currentCurrent = 0.0;
 
     // Inicjalizacja WiFi
-    WiFi.begin("SSID", "PASSWORD");
+    WiFi.begin("admin", "admin");
     unsigned long startAttemptTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
         delay(1000);
@@ -1122,7 +1136,58 @@ void setup() {
     } else {
         Serial.println("Nie udało się połączyć z WiFi");
     }
+
+    // Inicjalizacja EEPROM
+    EEPROM.begin(512);
+
+    // Wczytaj parametry PID z pamięci EEPROM
+    handlePIDParams(Kp, Ki, Kd, false);
+
+    // Inicjalizacja zmiennych globalnych dla PID
+    previousError = 0;
+    integral = 0;
+
+    // Inicjalizacja zmiennych globalnych dla agenta 1
+    for (int i = 0; i < NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD; i++) {
+        for (int j = 0; j < NUM_ACTIONS; j++) {
+            qTableAgent1[i][j] = 0.0;
+        }
+    }
+
+    // Inicjalizacja serwera
+    server.on("/", []() {
+        server.send(200, "text/plain", "Witaj w systemie stabilizacji napięcia!");
+    });
+    server.begin();
+
+    // Inicjalizacja optymalizatora bayesowskiego
+    optimizer.init(params, bounds, 3);
+
+    // Inicjalizacja losowości
+    randomSeed(analogRead(0));
+
+    // Wyświetlenie komunikatu powitalnego
+    Serial.println(FPSTR(welcomeMessage));
 }
+
+    stateAgent1[0] = 0.0;
+    stateAgent1[1] = 0.0;
+    actionAgent1 = 0.0;
+
+    // Inicjalizacja zmiennych globalnych dla optymalizacji bayesowskiej
+    bestEfficiency = 0.0;
+    lastOptimizationTime = millis();
+}
+
+    stateAgent1[0] = 0.0;
+    stateAgent1[1] = 0.0;
+    actionAgent1 = 0.0;
+
+    // Inicjalizacja zmiennych globalnych dla optymalizacji bayesowskiej
+    bestEfficiency = 0.0;
+    lastOptimizationTime = millis();
+}
+
 
 float objectiveFunction(const float* params) {
     // Przypisanie parametrów PID
@@ -1143,11 +1208,12 @@ float evaluate(float threshold) {
     return threshold; // Przykładowa implementacja
 }
 
-
 void selectMuxChannel(int channel) {
     digitalWrite(muxSelectPinA, channel & 1);
     digitalWrite(muxSelectPinB, (channel >> 1) & 1);
 }
+
+
 
 // Funkcja odczytu sensorów
 void readSensors() {
@@ -1175,6 +1241,7 @@ void readSensors() {
         currentIn[i] = sensorVoltage / sensitivity;
     }
 }
+
 
 // Funkcja sprawdzania alarmów
 void checkAlarm() {
@@ -1365,6 +1432,31 @@ void loop() {
         Serial.print("Wydajność: "); Serial.println(bestEfficiency);
     }
 
+    // Obsługa serwera
+    server.handleClient();
+
+    // Odczyt napięcia i prądu
+    currentVoltage = analogRead(PIN_EXTERNAL_VOLTAGE_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    currentCurrent = analogRead(PIN_EXTERNAL_CURRENT_SENSOR_1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+    // Trening agenta
+    trainAgent1();
+
+    // Aktualizacja wyświetlacza
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("Voltage: ");
+    display.print(currentVoltage);
+    display.print(" V");
+    display.setCursor(0, 10);
+    display.print("Current: ");
+    display.print(currentCurrent);
+    display.print(" A");
+    display.display();
+}
+
+
+
     readSensors();
 
     // Sprawdzenie, czy są dostępne dane do odczytu
@@ -1545,6 +1637,17 @@ updateQAgent3(state3, action3, reward3, nextState3);
 float inputPower = voltageIn[0] * currentIn[0];
 adjustMinInputPower(inputPower);
 
+// Obsługa serwera
+    server.handleClient();
+
+    // Obsługa komend szeregowych
+    handleSerialCommands();
+
+    // Trening agenta 1
+    trainAgent1();
+
+    // Aktualizacja agenta 3
+    qLearningAgent3();
 
 // Funkcja monitorująca tranzystory
 void monitorTransistors() {
