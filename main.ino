@@ -1076,7 +1076,11 @@ public:
     }
 };
 
-
+/*
+ * UWAGA:
+ * Klasa Agent3 jest zaprojektowana tak, aby zawsze zmniejszać obciążenie prądnicy.
+ * Proszę nie zmieniać tej funkcjonalności, aby uniknąć nieporozumień i błędów w działaniu systemu.
+ */
 
 class Agent3 {
 public:
@@ -1088,6 +1092,16 @@ public:
     int discretizeStateAgent3() {
         return map(currentBrakePWM, MIN_BRAKE_PWM, MAX_BRAKE_PWM, 0, NUM_STATES_AGENT3 - 1);
     }
+
+    // Funkcja wykonująca akcję agenta 3
+    void performAction(float action) {
+        // Agent 3 zawsze zmniejsza hamowanie
+        currentBrakePWM = max(currentBrakePWM - PWM_INCREMENT, MIN_BRAKE_PWM);
+        analogWrite(mosfetPin, currentBrakePWM);
+        agent3MinimizedBraking = true; // Ustawienie flagi
+    }
+};
+
 
     // Wybór akcji na podstawie epsilon-greedy policy
     int chooseActionAgent3(int state) {
