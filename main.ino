@@ -12,7 +12,6 @@
 #define TOLERANCE 0.5 // Margines tolerancji
 #define NUM_STATES_AGENT2 100 // Definicja liczby stanów dla Agenta 2
 
-
 // Definicje pinów dla tranzystorów
 const int mosfetPin = D4;
 const int excitationBJT1Pin = D8;
@@ -39,8 +38,6 @@ float testEpsilon = 0.2;
 float testLearningRate = 0.05;
 float testDiscountFactor = 0.95;
 
-
-
 // Definicje stałych i zmiennych
 const float VOLTAGE_REFERENCE = 5.0;
 const int ADC_MAX_VALUE = 1023;
@@ -63,6 +60,9 @@ bool stopCompute = false;
 HardwareSerial mySerial(1);
 float evaluateThreshold = 0.1;
 
+// Zmienna globalna do przechowywania poprzedniej wartości sygnału
+float previousFilteredValue = 0.0;
+
 // Deklaracje funkcji
 void hillClimbing();
 void discretizeStateAgent3(float state[2], int discreteState[2]);
@@ -76,79 +76,14 @@ void getBestParams(float params[3]);
 float getBestObjective();
 void suggestNextParameters(float params[3]);
 
-// Definicje stałych
-#define MAX_CURRENT 25
-#define TOLERANCE 0.5
-#define NUM_STATES_AGENT2 100
-
-// Definicje pinów
-const int mosfetPin = D4;
-const int excitationBJT1Pin = D8;
-const int excitationBJT2Pin = D9;
-const int bjtPin1 = D5;
-const int bjtPin2 = D6;
-const int bjtPin3 = D7;
-const int muxSelectPinA = D0;
-const int muxSelectPinB = D1;
-const int muxSelectPinC = D2;
-const int muxSelectPinD = D3;
-const int muxInputPin = A0;
-const int newPin1 = D10;
-const int newPin2 = D11;
-const int newPin3 = D12;
-const int bjtPin4 = D13;
-
-// Definicje zmiennych
-float testEpsilon = 0.2;
-float testLearningRate = 0.05;
-float testDiscountFactor = 0.95;
-const float VOLTAGE_REFERENCE = 5.0;
-const int ADC_MAX_VALUE = 1023;
-const float VOLTAGE_REGULATION_HYSTERESIS = 0.1;
-const int INITIAL_BRAKE_PWM = 128;
-const float MIN_ERROR = -5.0;
-const float MAX_ERROR = 5.0;
-const float MIN_LOAD = 0.0;
-const float MAX_LOAD = 1.0;
-const float MIN_KP = 0.0;
-const float MAX_KP = 5.0;
-const float MIN_KI = 0.0;
-const float MAX_KI = 1.0;
-const float MIN_KD = 0.0;
-const float MAX_KD = 2.0;
-const int HIGH_FREQUENCY = 1000;
-const int LOW_FREQUENCY = 100;
-const int controlFrequency = 50;
-bool stopCompute = false;
-HardwareSerial mySerial(1);
-float evaluateThreshold = 0.1;
-
-// Deklaracje funkcji
-void hillClimbing();
-void discretizeStateAgent3(float state[2], int discreteState[2]);
-float chooseActionAgent3(int discreteState[2]);
-void executeActionAgent3(float action);
-float calculateRewardAgent3(float state[2], float action);
-void updateQAgent3(float state[2], float action, float reward, float nextState[2]);
-float objectiveFunction(float params[3]);
-float simulateVoltageControl(float Kp, float Ki, float Kd);
-float simulateExcitationControl();
-float simulateBrakingEffect();
-float readVoltage();
-float readExcitationCurrent();
-float readBrakingEffect();
-float someFunctionOfOtherParameters(float rotationalSpeed, float torque, float frictionCoefficient);
-
-
-
 // Definicje stałych i zmiennych globalnych
 const int NUM_STATES_AGENT3 = 100;
 const int NUM_ACTIONS_AGENT3 = 10;
 float qTableAgent1[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3] = {0}; // Inicjalizacja tablicy Q
 float learningRate = 0.1; // Przykładowa wartość współczynnika uczenia
-float discountFactor = 0.9; // Przykładowa wartość współczynnika dyskontowego
+float discountFactor = 0.9; // Przykładowa wartość współczynnika
 
-// Implementacja funkcji
+
 void hillClimbing() {
     float currentParams[3] = {1.0, 1.0, 1.0}; // Początkowe parametry
     float bestParams[3];
@@ -169,41 +104,82 @@ void hillClimbing() {
     memcpy(currentParams, bestParams, sizeof(bestParams));
 }
 
+
 void discretizeStateAgent3(float state[2], int discreteState[2]) {
     discreteState[0] = (int)(state[0] * 10); // Dyskretyzacja stanu 1
     discreteState[1] = (int)(state[1] * 10); // Dyskretyzacja stanu 2
 }
 
+
 float chooseActionAgent3(int discreteState[2]) {
-    return (float)(discreteState[0] + discreteState[1]) / 2.0; // Przykładowa logika wyboru akcji
+    int stateIndex = discreteState[0] * 10 + discreteState[1];
+    float maxQValue = qTableAgent1[stateIndex][0];
+    int bestActionIndex = 0;
+
+    // Przeszukiwanie tablicy Q w celu znalezienia najlepszej akcji
+    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
+        if (qTableAgent1[stateIndex][i] > maxQValue) {
+            maxQValue = qTableAgent1[stateIndex][i];
+            bestActionIndex = i;
+        }
+    }
+
+    // Zwrócenie najlepszej akcji
+    return (float)bestActionIndex / (NUM_ACTIONS_AGENT3 - 1);
 }
 
+
 void executeActionAgent3(float action) {
-    analogWrite(mosfetPin, (int)(action * 255.0)); // Wykonanie akcji przez ustawienie PWM
+    // Przekształcenie akcji na wartość PWM (zakres 0-255)
+    int pwmValue = (int)(action * 255.0);
+    
+    // Ustawienie wartości PWM na pinie MOSFET
+    analogWrite(mosfetPin, pwmValue);
 }
+
 
 float calculateRewardAgent3(float state[2], float action) {
     float target = 1.0; // Docelowy stan
     float error = target - (state[0] + state[1]) / 2.0;
-    return -abs(error); // Nagroda to negatywna wartość błędu
+    float reward = -abs(error); // Nagroda to negatywna wartość błędu
+
+    // Dodatkowa kara za zbyt dużą akcję
+    if (action > 0.8) {
+        reward -= 0.1 * (action - 0.8);
+    }
+
+    return reward;
 }
 
-void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
-    int stateIndex = (int)(state[0] * 10 + state[1] * 10);
-    int nextStateIndex = (int)(nextState[0] * 10 + nextState[1] * 10);
-    int actionIndex = (int)(action * 10);
 
+void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
+    // Dyskretyzacja stanów
+    int discreteState[2];
+    int discreteNextState[2];
+    discretizeStateAgent3(state, discreteState);
+    discretizeStateAgent3(nextState, discreteNextState);
+
+    // Obliczenie indeksów stanów i akcji
+    int stateIndex = discreteState[0] * 10 + discreteState[1];
+    int nextStateIndex = discreteNextState[0] * 10 + discreteNextState[1];
+    int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
+
+    // Aktualna wartość Q
     float currentQ = qTableAgent1[stateIndex][actionIndex];
+
+    // Maksymalna wartość Q dla następnego stanu
     float maxNextQ = qTableAgent1[nextStateIndex][0];
     for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
         if (qTableAgent1[nextStateIndex][i] > maxNextQ) {
             maxNextQ = qTableAgent1[nextStateIndex][i];
         }
     }
+
+    // Aktualizacja wartości Q
     qTableAgent1[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
 }
 
-// Przykładowa funkcja celu
+
 float objectiveFunction(float params[3]) {
     float Kp = params[0];
     float Ki = params[1];
@@ -220,7 +196,7 @@ float objectiveFunction(float params[3]) {
     return objective;
 }
 
-// Przykładowa funkcja symulująca kontrolę napięcia
+
 float simulateVoltageControl(float Kp, float Ki, float Kd) {
     float error = 0.0;
     float setpoint = 230.0; // Docelowe napięcie 230V
@@ -249,24 +225,61 @@ float simulateVoltageControl(float Kp, float Ki, float Kd) {
     return error;
 }
 
-}
-
-// Przykładowa funkcja symulująca kontrolę prądu wzbudzenia
 float simulateExcitationControl() {
     float setpoint = 25.0; // Docelowy prąd wzbudzenia 25A
-    float measuredValue = readExcitationCurrent();
-    float error = abs(setpoint - measuredValue);
+    float measuredValue = 0.0;
+    float error = 0.0;
+    float previousError = 0.0;
+    float integral = 0.0;
+    float Kp = 1.0; // Przykładowa wartość Kp
+    float Ki = 0.1; // Przykładowa wartość Ki
+    float Kd = 0.01; // Przykładowa wartość Kd
+
+    for (int i = 0; i < 100; i++) {
+        measuredValue = readExcitationCurrent();
+        float currentError = setpoint - measuredValue;
+        integral += currentError;
+        float derivative = currentError - previousError;
+        float output = Kp * currentError + Ki * integral + Kd * derivative;
+
+        // Wykonanie akcji na podstawie wyjścia PID
+        analogWrite(excitationBJT1Pin, constrain(output, 0, 255));
+        analogWrite(excitationBJT2Pin, constrain(output, 0, 255));
+
+        error += abs(currentError);
+        previousError = currentError;
+
+        // Krótkie opóźnienie, aby symulować czas rzeczywisty
+        delay(10);
+    }
 
     return error;
 }
 
-// Przykładowa funkcja modelująca efekt hamowania na podstawie parametrów prądnicy
-float someFunctionOfOtherParameters(float rotationalSpeed, float torque, float frictionCoefficient) {
+
+float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionCoefficient) {
     // Model matematyczny: efekt hamowania jest proporcjonalny do prędkości obrotowej i momentu obrotowego,
     // a odwrotnie proporcjonalny do współczynnika tarcia
     float simulatedBrakingEffect = (rotationalSpeed * torque) / (frictionCoefficient * 10.0);
+
+    // Symulacja dynamicznego efektu hamowania
+    for (int i = 0; i < 100; i++) {
+        // Aktualizacja prędkości obrotowej na podstawie efektu hamowania
+        rotationalSpeed -= simulatedBrakingEffect * 0.01;
+
+        // Aktualizacja momentu obrotowego na podstawie prędkości obrotowej
+        torque = torque * (1 - 0.01 * rotationalSpeed);
+
+        // Aktualizacja współczynnika tarcia na podstawie prędkości obrotowej i momentu obrotowego
+        frictionCoefficient = frictionCoefficient * (1 + 0.01 * torque);
+
+        // Krótkie opóźnienie, aby symulować czas rzeczywisty
+        delay(10);
+    }
+
     return simulatedBrakingEffect;
 }
+
 
 // Przykładowa funkcja symulująca efekt hamowania bez czujników
 float readBrakingEffect(float load) {
@@ -280,11 +293,8 @@ float readBrakingEffect(float load) {
     float frictionCoefficient = 0.8;
     
     // Dostosowanie prędkości obrotowej w zależności od obciążenia
-    float rotationalSpeed = baseRotationalSpeed * (1.0 + load);
-    
-    float simulatedBrakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-    
-    return simulatedBrakingEffect;
+    float rotationalSpeed = baseRotationalSpeed * (1.0 - load);
+    return someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
 }
 
 // Przykładowa funkcja symulująca efekt hamowania
@@ -298,30 +308,133 @@ float simulateBrakingEffect() {
     return penalizedBrakingEffect;
 }
 
-// Przykładowe funkcje odczytu wartości
-
 // Kalibracja napięcia
 float calibrateVoltage(float rawVoltage) {
-    // Przykładowa kalibracja
-    return rawVoltage * 1.05; // Korekta o 5%
+    // Przykładowa kalibracja z bardziej precyzyjną korektą
+    const float calibrationFactor = 1.05; // Współczynnik kalibracji
+    float calibratedVoltage = rawVoltage * calibrationFactor;
+
+    // Dodatkowa korekta na podstawie pomiarów
+    if (calibratedVoltage > 5.0) {
+        calibratedVoltage = 5.0; // Ograniczenie maksymalnego napięcia
+    } else if (calibratedVoltage < 0.0) {
+        calibratedVoltage = 0.0; // Ograniczenie minimalnego napięcia
+    }
+
+    return calibratedVoltage;
 }
+
+
 
 // Kalibracja prądu wzbudzenia
 float calibrateCurrent(float rawCurrent) {
-    // Przykładowa kalibracja
-    return rawCurrent * 0.95; // Korekta o -5%
+    // Współczynnik kalibracji
+    const float calibrationFactor = 0.95; // Korekta o -5%
+    float calibratedCurrent = rawCurrent * calibrationFactor;
+
+    // Dodatkowa korekta na podstawie pomiarów
+    if (calibratedCurrent > MAX_CURRENT) {
+        calibratedCurrent = MAX_CURRENT; // Ograniczenie maksymalnego prądu
+    } else if (calibratedCurrent < 0.0) {
+        calibratedCurrent = 0.0; // Ograniczenie minimalnego prądu
+    }
+
+    return calibratedCurrent;
+}
+
+// Definicje stałych
+#define MAX_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
+#define ADC_MAX_VALUE 1023 // Maksymalna wartość odczytu z ADC
+
+// Funkcja kalibracji prądu wzbudzenia
+float calibrateCurrent(float rawCurrent) {
+    // Współczynnik kalibracji
+    const float calibrationFactor = 0.95; // Korekta o -5%
+    float calibratedCurrent = rawCurrent * calibrationFactor;
+
+    // Dodatkowa korekta na podstawie pomiarów
+    if (calibratedCurrent > MAX_CURRENT) {
+        calibratedCurrent = MAX_CURRENT; // Ograniczenie maksymalnego prądu
+    } else if (calibratedCurrent < 0.0) {
+        calibratedCurrent = 0.0; // Ograniczenie minimalnego prądu
+    }
+
+    return calibratedCurrent;
+}
+
+// Funkcja odczytu prądu wzbudzenia (przykładowa implementacja)
+float readExcitationCurrent() {
+    int sensorValue = analogRead(A0); // Odczyt wartości z pinu analogowego
+    float rawCurrent = (sensorValue / (float)ADC_MAX_VALUE) * MAX_CURRENT;
+    return calibrateCurrent(rawCurrent);
+}
+
+
+// Definicje stałych
+#define TEMPERATURE_COEFFICIENT 0.98 // Współczynnik kalibracji dla temperatury
+#define WEAR_COEFFICIENT 0.95 // Współczynnik kalibracji dla zużycia hamulców
+#define SPEED_COEFFICIENT 1.01 // Współczynnik kalibracji dla prędkości obrotowej
+
+// Funkcja odczytu temperatury (przykładowa implementacja)
+float readTemperature() {
+    // Przykładowa wartość temperatury
+    return 25.0; // 25 stopni Celsjusza
+}
+
+// Funkcja odczytu zużycia hamulców (przykładowa implementacja)
+float readBrakeWear() {
+    // Przykładowa wartość zużycia hamulców
+    return 0.8; // 80% zużycia
+}
+
+// Funkcja odczytu prędkości obrotowej (przykładowa implementacja)
+float readRotationalSpeed() {
+    // Przykładowa wartość prędkości obrotowej
+    return 3000.0; // 3000 RPM
 }
 
 // Kalibracja efektu hamowania
 float calibrateBrakingEffect(float rawBrakingEffect) {
-    // Przykładowa kalibracja
-    return rawBrakingEffect * 1.02; // Korekta o 2%
+    // Odczyt dodatkowych parametrów
+    float temperature = readTemperature();
+    float brakeWear = readBrakeWear();
+    float rotationalSpeed = readRotationalSpeed();
+
+    // Kalibracja na podstawie temperatury
+    float temperatureFactor = 1.0;
+    if (temperature > 30.0) {
+        temperatureFactor = TEMPERATURE_COEFFICIENT;
+    }
+
+    // Kalibracja na podstawie zużycia hamulców
+    float wearFactor = 1.0;
+    if (brakeWear > 0.7) {
+        wearFactor = WEAR_COEFFICIENT;
+    }
+
+    // Kalibracja na podstawie prędkości obrotowej
+    float speedFactor = 1.0;
+    if (rotationalSpeed > 2500.0) {
+        speedFactor = SPEED_COEFFICIENT;
+    }
+
+    // Obliczenie skalibrowanego efektu hamowania
+    float calibratedBrakingEffect = rawBrakingEffect * temperatureFactor * wearFactor * speedFactor;
+
+    // Dodatkowa korekta o 2%
+    calibratedBrakingEffect *= 1.02;
+
+    return calibratedBrakingEffect;
 }
 
+
 // Filtrowanie sygnału (przykładowy filtr dolnoprzepustowy)
-float lowPassFilter(float currentValue, float previousValue, float alpha) {
-    return alpha * currentValue + (1 - alpha) * previousValue;
+float lowPassFilter(float currentValue, float alpha) {
+    float filteredValue = alpha * currentValue + (1 - alpha) * previousFilteredValue;
+    previousFilteredValue = filteredValue;
+    return filteredValue;
 }
+
 
 float readVoltage() {
     // Implementacja odczytu napięcia
@@ -376,7 +489,7 @@ float readBrakingEffect() {
     };
     
 
-void optimize() {
+    void optimize() {
     float params[3] = {1.0, 1.0, 1.0};
     float bestParams[3];
     memcpy(bestParams, params, sizeof(params));
@@ -422,7 +535,6 @@ void suggestNextParameters(float params[3]) {
     }
 }
 
-
 // Przykładowa funkcja ustawiająca najlepsze parametry
 void getBestParams(float params[3]) {
     // Tutaj można ustawić najlepsze parametry w odpowiednich zmiennych globalnych lub strukturach
@@ -434,24 +546,9 @@ void getBestParams(float params[3]) {
     Serial.println(params[2]);
 }
 
-
-void getBestParams(float params[3]) {
-    params[0] = 1.0; // Przykładowe najlepsze parametry
-    params[1] = 1.0;
-    params[2] = 1.0;
-}
-
 float getBestObjective() {
     return 1.0; // Przykładowa najlepsza wartość funkcji celu
 }
-
-void suggestNextParameters(float params[3]) {
-    for (int i = 0; i < 3; i++) {
-        params[i] += random(-1, 2) * 0.1; // Sugerowanie nowych parametrów
-    }
-}
-
-
 
 void autoTunePID(PID &pid, float setpoint, float measuredValue) {
     // Przykładowa implementacja auto-strojenia
@@ -476,6 +573,7 @@ void autoTunePID(PID &pid, float setpoint, float measuredValue) {
 
     pid.setTunings(bestKp, bestKi, bestKd);
 }
+
 // Dodaj funkcję autoTunePID
 void autoTunePID() {
     // Przykładowe wartości początkowe
@@ -549,8 +647,6 @@ float simulatePIDControl() {
 
     return error;
 }
-
-
 
 // Definicje zmiennych globalnych
 float voltageIn[2] = {0};
@@ -631,7 +727,6 @@ void updateQTableAgent1(float state[2], float action, float reward, float nextSt
     qTableAgent1[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
 }
 
-
 // Funkcja wybierająca akcję dla agenta 1
 float selectActionAgent1(float state[2]) {
     int stateIndex = (int)(state[0] * NUM_STATE_BINS_ERROR) * NUM_STATE_BINS_LOAD + (int)(state[1] * NUM_STATE_BINS_LOAD);
@@ -650,7 +745,6 @@ float selectActionAgent1(float state[2]) {
         return bestAction;
     }
 }
-
 
 // Funkcja ucząca agenta 1
 void trainAgent1() {
@@ -674,7 +768,6 @@ void trainAgent1() {
     performActionAgent1(actionAgent1);
 }
 
-
 // Funkcja obliczająca wydajność
 float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
     float inputPower = voltageIn * currentIn;
@@ -688,12 +781,10 @@ float calculateEfficiency(float voltageIn, float currentIn, float externalVoltag
 }
 
 
-
 // Zmienne globalne dla komunikacji między agentami
 bool agent2IncreasedExcitation = false;
 bool agent3MinimizedBraking = false;
 float agent2ExcitationCurrent = 0.0;
-
 
 // Funkcja komunikacji między agentami
 void communicateBetweenAgents() {
@@ -710,8 +801,6 @@ void communicateBetweenAgents() {
         agent3MinimizedBraking = false; // Resetowanie flagi
     }
 }
-
-
 
 // Funkcja wykonująca akcję agenta 3
 void performActionAgent3(float action) {
@@ -833,12 +922,10 @@ void trainAgent3() {
     performActionAgent3(actionAgent3);
 }
 
-
 // Stałe konfiguracyjne
 const int MAX_EXCITATION_CURRENT = 255;
 const float MAX_VOLTAGE = 230.0;
 const float MIN_VOLTAGE = 0.0;
-
 
 // Funkcja symulująca działanie systemu stabilizatora napięcia
 float simulateSystem(float Kp, float Ki, float Kd) {
@@ -875,7 +962,6 @@ float simulateSystem(float Kp, float Ki, float Kd) {
     return simulatedEfficiency;
 }
 
-
 // Dodane zmienne
 const float Kp_max = 5.0;
 float previousVoltage = 0.0;
@@ -900,8 +986,6 @@ const int NUM_STATE_BINS_KD = 3;
 
 const int NUM_ACTIONS = 6;
 float epsilon = 0.3;
-float learningRate = 0.1;
-float discountFactor = 0.9;
 
 // Parametry automatycznej optymalizacji
 const unsigned long OPTIMIZATION_INTERVAL = 60000;
@@ -916,8 +1000,6 @@ float bestEfficiency = 0.0;
 
 // Stałe dane w pamięci flash (PROGMEM)
 const char* welcomeMessage PROGMEM = "Witaj w systemie stabilizacji napięcia!";
-
-
 
 // Definicje stałych
 #define MAX_EXCITATION_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
@@ -970,8 +1052,6 @@ void controlExcitationTransistors(float excitationCurrent) {
     analogWrite(bjtPin4, pwmValueBJT4);
 }
 
-
-
 // Funkcja obliczająca wydajność
 float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
     float inputPower = voltageIn * currentIn;
@@ -1007,7 +1087,6 @@ void handleSerialCommands() {
         }
     }
 }
-
 
 // Funkcja automatycznego dostrajania PID
 void autoTunePID() {
@@ -1046,22 +1125,10 @@ void autoTunePID() {
         analogWrite(mosfetPin, constrain(controlSignal, 0, 255));
         delay(100); // Opóźnienie dla stabilizacji
     }
-
-    if (oscillationsDetected) {
-        Kp = 0.6 * Ku;
-        Ki = 2 * Kp / Tu;
-        Kd = Kp * Tu / 8;
-        Serial.println("Optymalizacja PID zakończona:");
-        Serial.print("Kp: "); Serial.println(Kp);
-        Serial.print("Ki: "); Serial.println(Ki);
-        Serial.print("Kd: "); Serial.println(Kd);
-        savePIDParams(Kp, Ki, Kd);
-        Serial.print("Zapisane parametry PID: Kp="); Serial.print(Kp);
-        Serial.print(", Ki="); Serial.print(Ki);
-        Serial.print(", Kd="); Serial.println(Kd);
-    }
 }
-// Funkcja testująca ustawienia PID
+
+
+   // Funkcja testująca ustawienia PID
 void testPIDSettings() {
     float efficiency = simulateSystem(Kp, Ki, Kd);
     Serial.print("Efektywność dla Kp="); Serial.print(Kp);
@@ -1083,7 +1150,6 @@ void handlePIDParams(float &Kp, float &Ki, float &Kd, bool save) {
         EEPROM.get(2 * sizeof(float), Kd); // Odczytaj wartość Kd po Ki
     }
 }
-
 
 // Funkcja optymalizacji PID z zapisywaniem wyników
 void optimizePID() {
@@ -1152,18 +1218,14 @@ void optimizePID() {
     }
 }
 
+
 // Wczytaj parametry PID z pamięci EEPROM podczas uruchamiania
 
-
-
-
-
- int analogRead(int pin) {
+int analogRead(int pin) {
     // Implementacja odczytu analogowego
     // W przypadku ESP8266, używamy funkcji analogRead z biblioteki Arduino
     return ::analogRead(pin);
 }
-
 
 // Inicjalizacja tablicy Q-learning
 float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3] = {0};
@@ -1939,21 +2001,11 @@ void setup() {
 }
 
 void initializePins() {
-    pinMode(muxSelectPinA, OUTPUT);
-    pinMode(muxSelectPinB, OUTPUT);
-    pinMode(muxSelectPinC, OUTPUT);
-    pinMode(muxSelectPinD, OUTPUT);
+    int pins[] = {muxSelectPinA, muxSelectPinB, muxSelectPinC, muxSelectPinD, mosfetPin, bjtPin1, bjtPin2, bjtPin3, excitationBJT1Pin, excitationBJT2Pin, newPin1, newPin2, newPin3, bjtPin4};
+    for (int pin : pins) {
+        pinMode(pin, OUTPUT);
+    }
     pinMode(muxInputPin, INPUT);
-    pinMode(mosfetPin, OUTPUT);
-    pinMode(bjtPin1, OUTPUT);
-    pinMode(bjtPin2, OUTPUT);
-    pinMode(bjtPin3, OUTPUT);
-    pinMode(excitationBJT1Pin, OUTPUT);
-    pinMode(excitationBJT2Pin, OUTPUT);
-    pinMode(newPin1, OUTPUT);
-    pinMode(newPin2, OUTPUT);
-    pinMode(newPin3, OUTPUT);
-    pinMode(bjtPin4, OUTPUT);
 }
 
 void initializeServer() {
@@ -2004,44 +2056,47 @@ void initializeWiFi() {
         Serial.println("Nie udało się połączyć z WiFi");
     }
 }
-    // Wczytaj parametry PID z pamięci EEPROM
-    handlePIDParams(Kp, Ki, Kd, false);
 
-    // Inicjalizacja zmiennych globalnych dla PID
+void initializePIDParams() {
+    handlePIDParams(Kp, Ki, Kd, false);
     previousError = 0;
     integral = 0;
+}
 
-    // Inicjalizacja zmiennych globalnych dla agenta 1
+void initializeQTable() {
     for (int i = 0; i < NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD; i++) {
         for (int j = 0; j < NUM_ACTIONS; j++) {
             qTableAgent1[i][j] = 0.0;
         }
     }
+}
 
-    // Inicjalizacja serwera
+void initializeServerRoutes() {
     server.on("/", []() {
         server.send(200, "text/plain", "Witaj w systemie stabilizacji napięcia!");
     });
     server.begin();
+}
 
-    // Inicjalizacja optymalizatora bayesowskiego
-    optimizer.init(params, bounds, 3);
-
-    // Inicjalizacja losowości
+void initializeRandomSeed() {
     randomSeed(analogRead(0));
+}
 
-    // Wyświetlenie komunikatu powitalnego
+void displayWelcomeMessageSerial() {
     Serial.println(FPSTR(welcomeMessage));
 }
 
+void initializeAgent1State() {
     stateAgent1[0] = 0.0;
     stateAgent1[1] = 0.0;
     actionAgent1 = 0.0;
+}
 
-    // Inicjalizacja zmiennych globalnych dla optymalizacji bayesowskiej
+void initializeBayesianOptimization() {
     bestEfficiency = 0.0;
     lastOptimizationTime = millis();
 }
+
 
     stateAgent1[0] = 0.0;
     stateAgent1[1] = 0.0;
@@ -2069,13 +2124,21 @@ float objectiveFunction(const float* params) {
 float evaluate(float threshold) {
     // Implementacja funkcji oceniającej
     // Zwraca wartość oceny dla danego progu
-    return threshold; // Przykładowa implementacja
+    float voltage = readVoltage();
+    if (voltage > threshold) {
+        return 1.0; // Próg przekroczony
+    } else {
+        return 0.0; // Próg nieprzekroczony
+    }
 }
 
 void selectMuxChannel(int channel) {
     digitalWrite(muxSelectPinA, channel & 1);
     digitalWrite(muxSelectPinB, (channel >> 1) & 1);
+    digitalWrite(muxSelectPinC, (channel >> 2) & 1);
+    digitalWrite(muxSelectPinD, (channel >> 3) & 1);
 }
+
 
 
 
@@ -2271,14 +2334,16 @@ void adjustControlFrequency() {
 
 
 
-
 void loop() {
-    // Główna logika programu
+    // Obsługa serwera
+    server.handleClient();
+
     // Przykładowe wywołanie funkcji optymalizacji
     optimize();
 
-    // Przykładowe wywołanie funkcji auto-tuningu PID
-    autoTunePID();
+    // Przykładowe wywołanie funkcji auto-strojenia PID
+    PID pid(Kp, Ki, Kd);
+    autoTunePID(pid, VOLTAGE_SETPOINT, readVoltage());
 
     // Przykładowe wywołanie funkcji hill climbing
     hillClimbing();
@@ -2292,9 +2357,6 @@ void loop() {
     float reward = calculateRewardAgent3(state, action);
     float nextState[2] = {readVoltage(), readCurrent()};
     updateQAgent3(state, action, reward, nextState);
-
-    // Obsługa serwera
-    server.handleClient();
 
     // Krótkie opóźnienie, aby symulować czas rzeczywisty
     delay(100);
@@ -2327,6 +2389,8 @@ void loop() {
         Serial.print("Kd: "); Serial.println(Kd);
         Serial.print("Wydajność: "); Serial.println(bestEfficiency);
     }
+}
+
 
     // Inne operacje w pętli głównej
     handleSerialCommands();
@@ -2349,6 +2413,12 @@ void loop() {
         discountFactor = testDiscountFactor;
         initialized = true;
     }
+}
+
+void handleRoot() {
+    server.send(200, "text/plain", "Hello from ESP8266");
+}
+
 
     // Wywołanie funkcji learn dla agenta 2
     float error = VOLTAGE_SETPOINT - currentVoltage;
