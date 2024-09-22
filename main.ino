@@ -7,10 +7,11 @@
 #include <ArduinoEigen.h>
 #include <BayesOptimizer.h>
 
-// Definicje stałych
 #define MAX_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
 #define TOLERANCE 0.5 // Margines tolerancji
 #define NUM_STATES_AGENT2 100 // Definicja liczby stanów dla Agenta 2
+#define MAX_BRAKING_EFFECT 100.0 // Przykładowa maksymalna wartość efektu hamowania
+w
 
 // Definicje pinów dla tranzystorów
 const int mosfetPin = D4;
@@ -111,21 +112,23 @@ void discretizeStateAgent3(float state[2], int discreteState[2]) {
 }
 
 
-float chooseActionAgent3(int discreteState[2]) {
+float chooseActionAgent3(int discreteState[2], float epsilon) {
     int stateIndex = discreteState[0] * 10 + discreteState[1];
-    float maxQValue = qTableAgent1[stateIndex][0];
-    int bestActionIndex = 0;
-
-    // Przeszukiwanie tablicy Q w celu znalezienia najlepszej akcji
-    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-        if (qTableAgent1[stateIndex][i] > maxQValue) {
-            maxQValue = qTableAgent1[stateIndex][i];
-            bestActionIndex = i;
+    if (random(0, 100) < epsilon * 100) {
+        // Eksploracja: wybierz losową akcję
+        return (float)random(0, NUM_ACTIONS_AGENT3) / (NUM_ACTIONS_AGENT3 - 1);
+    } else {
+        // Eksploatacja: wybierz najlepszą akcję
+        float maxQValue = qTableAgent1[stateIndex][0];
+        int bestActionIndex = 0;
+        for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
+            if (qTableAgent1[stateIndex][i] > maxQValue) {
+                maxQValue = qTableAgent1[stateIndex][i];
+                bestActionIndex = i;
+            }
         }
+        return (float)bestActionIndex / (NUM_ACTIONS_AGENT3 - 1);
     }
-
-    // Zwrócenie najlepszej akcji
-    return (float)bestActionIndex / (NUM_ACTIONS_AGENT3 - 1);
 }
 
 
@@ -196,34 +199,38 @@ float objectiveFunction(float params[3]) {
     return objective;
 }
 
-
 float simulateVoltageControl(float Kp, float Ki, float Kd) {
     float error = 0.0;
     float setpoint = 230.0; // Docelowe napięcie 230V
     float measuredValue = readVoltage();
     float previousError = 0.0;
     float integral = 0.0;
+    unsigned long previousMillis = millis();
+    const long interval = 10; // Interwał w milisekundach
 
     for (int i = 0; i < 100; i++) {
-        float currentError = setpoint - measuredValue;
-        integral += currentError;
-        float derivative = currentError - previousError;
-        float output = Kp * currentError + Ki * integral + Kd * derivative;
+        unsigned long currentMillis = millis();
+        if (currentMillis - previousMillis >= interval) {
+            previousMillis = currentMillis;
 
-        // Wykonanie akcji na podstawie wyjścia PID
-        analogWrite(mosfetPin, constrain(output, 0, 255));
+            float currentError = setpoint - measuredValue;
+            integral += currentError;
+            float derivative = currentError - previousError;
+            float output = Kp * currentError + Ki * integral + Kd * derivative;
 
-        // Aktualizacja wartości zmierzonej
-        measuredValue = readVoltage();
-        error += abs(currentError);
-        previousError = currentError;
+            // Wykonanie akcji na podstawie wyjścia PID
+            analogWrite(mosfetPin, constrain(output, 0, 255));
 
-        // Krótkie opóźnienie, aby symulować czas rzeczywisty
-        delay(10);
+            // Aktualizacja wartości zmierzonej
+            measuredValue = readVoltage();
+            error += abs(currentError);
+            previousError = currentError;
+        }
     }
 
     return error;
 }
+
 
 float simulateExcitationControl() {
     float setpoint = 25.0; // Docelowy prąd wzbudzenia 25A
@@ -234,51 +241,59 @@ float simulateExcitationControl() {
     float Kp = 1.0; // Przykładowa wartość Kp
     float Ki = 0.1; // Przykładowa wartość Ki
     float Kd = 0.01; // Przykładowa wartość Kd
+    unsigned long previousMillis = millis();
+    const long interval = 10; // Interwał w milisekundach
 
     for (int i = 0; i < 100; i++) {
-        measuredValue = readExcitationCurrent();
-        float currentError = setpoint - measuredValue;
-        integral += currentError;
-        float derivative = currentError - previousError;
-        float output = Kp * currentError + Ki * integral + Kd * derivative;
+        unsigned long currentMillis = millis();
+        if (currentMillis - previousMillis >= interval) {
+            previousMillis = currentMillis;
 
-        // Wykonanie akcji na podstawie wyjścia PID
-        analogWrite(excitationBJT1Pin, constrain(output, 0, 255));
-        analogWrite(excitationBJT2Pin, constrain(output, 0, 255));
+            measuredValue = readExcitationCurrent();
+            float currentError = setpoint - measuredValue;
+            integral += currentError;
+            float derivative = currentError - previousError;
+            float output = Kp * currentError + Ki * integral + Kd * derivative;
 
-        error += abs(currentError);
-        previousError = currentError;
+            // Wykonanie akcji na podstawie wyjścia PID
+            analogWrite(excitationBJT1Pin, constrain(output, 0, 255));
+            analogWrite(excitationBJT2Pin, constrain(output, 0, 255));
 
-        // Krótkie opóźnienie, aby symulować czas rzeczywisty
-        delay(10);
+            error += abs(currentError);
+            previousError = currentError;
+        }
     }
 
     return error;
 }
 
-
 float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionCoefficient) {
     // Model matematyczny: efekt hamowania jest proporcjonalny do prędkości obrotowej i momentu obrotowego,
     // a odwrotnie proporcjonalny do współczynnika tarcia
     float simulatedBrakingEffect = (rotationalSpeed * torque) / (frictionCoefficient * 10.0);
+    unsigned long previousMillis = millis();
+    const long interval = 10; // Interwał w milisekundach
 
     // Symulacja dynamicznego efektu hamowania
     for (int i = 0; i < 100; i++) {
-        // Aktualizacja prędkości obrotowej na podstawie efektu hamowania
-        rotationalSpeed -= simulatedBrakingEffect * 0.01;
+        unsigned long currentMillis = millis();
+        if (currentMillis - previousMillis >= interval) {
+            previousMillis = currentMillis;
 
-        // Aktualizacja momentu obrotowego na podstawie prędkości obrotowej
-        torque = torque * (1 - 0.01 * rotationalSpeed);
+            // Aktualizacja prędkości obrotowej na podstawie efektu hamowania
+            rotationalSpeed -= simulatedBrakingEffect * 0.01;
 
-        // Aktualizacja współczynnika tarcia na podstawie prędkości obrotowej i momentu obrotowego
-        frictionCoefficient = frictionCoefficient * (1 + 0.01 * torque);
+            // Aktualizacja momentu obrotowego na podstawie prędkości obrotowej
+            torque = torque * (1 - 0.01 * rotationalSpeed);
 
-        // Krótkie opóźnienie, aby symulować czas rzeczywisty
-        delay(10);
+            // Aktualizacja współczynnika tarcia na podstawie prędkości obrotowej i momentu obrotowego
+            frictionCoefficient = frictionCoefficient * (1 + 0.01 * torque);
+        }
     }
 
     return simulatedBrakingEffect;
 }
+
 
 
 // Przykładowa funkcja symulująca efekt hamowania bez czujników
@@ -296,10 +311,6 @@ float readBrakingEffect(float load) {
     float rotationalSpeed = baseRotationalSpeed * (1.0 - load);
     return someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
 }
-
-// Przykładowa funkcja symulująca efekt hamowania
-float simulateBrakingEffect() {
-    float brakingEffect = readBrakingEffect(0.0); // Przykładowe obciążenie 0.0
     
     // Zakładamy, że mniejsza wartość efektu hamowania jest lepsza
     // Zastosowanie funkcji penalizującej większe wartości
@@ -325,27 +336,6 @@ float calibrateVoltage(float rawVoltage) {
 }
 
 
-
-// Kalibracja prądu wzbudzenia
-float calibrateCurrent(float rawCurrent) {
-    // Współczynnik kalibracji
-    const float calibrationFactor = 0.95; // Korekta o -5%
-    float calibratedCurrent = rawCurrent * calibrationFactor;
-
-    // Dodatkowa korekta na podstawie pomiarów
-    if (calibratedCurrent > MAX_CURRENT) {
-        calibratedCurrent = MAX_CURRENT; // Ograniczenie maksymalnego prądu
-    } else if (calibratedCurrent < 0.0) {
-        calibratedCurrent = 0.0; // Ograniczenie minimalnego prądu
-    }
-
-    return calibratedCurrent;
-}
-
-// Definicje stałych
-#define MAX_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
-#define ADC_MAX_VALUE 1023 // Maksymalna wartość odczytu z ADC
-
 // Funkcja kalibracji prądu wzbudzenia
 float calibrateCurrent(float rawCurrent) {
     // Współczynnik kalibracji
@@ -361,14 +351,6 @@ float calibrateCurrent(float rawCurrent) {
 
     return calibratedCurrent;
 }
-
-// Funkcja odczytu prądu wzbudzenia (przykładowa implementacja)
-float readExcitationCurrent() {
-    int sensorValue = analogRead(A0); // Odczyt wartości z pinu analogowego
-    float rawCurrent = (sensorValue / (float)ADC_MAX_VALUE) * MAX_CURRENT;
-    return calibrateCurrent(rawCurrent);
-}
-
 
 // Definicje stałych
 #define TEMPERATURE_COEFFICIENT 0.98 // Współczynnik kalibracji dla temperatury
@@ -427,23 +409,29 @@ float calibrateBrakingEffect(float rawBrakingEffect) {
     return calibratedBrakingEffect;
 }
 
-
 // Filtrowanie sygnału (przykładowy filtr dolnoprzepustowy)
-float lowPassFilter(float currentValue, float alpha) {
-    float filteredValue = alpha * currentValue + (1 - alpha) * previousFilteredValue;
-    previousFilteredValue = filteredValue;
-    return filteredValue;
+float lowPassFilter(float currentValue, float previousValue, float alpha) {
+    return alpha * currentValue + (1 - alpha) * previousValue;
 }
+
 
 
 float readVoltage() {
-    // Implementacja odczytu napięcia
-    float rawVoltage = analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    float calibratedVoltage = calibrateVoltage(rawVoltage);
-    static float filteredVoltage = calibratedVoltage; // Przechowywanie poprzedniej wartości
-    filteredVoltage = lowPassFilter(calibratedVoltage, filteredVoltage, 0.1); // Filtrowanie
+    // Przykładowa implementacja odczytu napięcia z pinu analogowego
+    int rawValue = analogRead(muxInputPin);
+    float voltage = (rawValue / (float)ADC_MAX_VALUE) * VOLTAGE_REFERENCE;
+
+    // Użycie filtra dolnoprzepustowego do wygładzenia odczytu napięcia
+    static float previousVoltage = 0.0;
+    float alpha = 0.1; // Przykładowa wartość alpha
+    float filteredVoltage = lowPassFilter(voltage, previousVoltage, alpha);
+    previousVoltage = filteredVoltage;
+
     return filteredVoltage;
 }
+
+
+
 
 float readExcitationCurrent() {
     // Implementacja odczytu prądu wzbudzenia
@@ -451,8 +439,12 @@ float readExcitationCurrent() {
     float calibratedCurrent = calibrateCurrent(rawCurrent);
     static float filteredCurrent = calibratedCurrent; // Przechowywanie poprzedniej wartości
     filteredCurrent = lowPassFilter(calibratedCurrent, filteredCurrent, 0.1); // Filtrowanie
+
     return filteredCurrent;
 }
+
+
+
 
 float readBrakingEffect() {
     // Implementacja odczytu efektu hamowania
@@ -1744,16 +1736,16 @@ void hillClimbing() {
     }
 }
 
+   void discretizeStateAgent3(float state[2], int discreteState[2]) {
+    // Normalizacja stanów
+    state[0] = constrain(state[0], 0.0, 1.0);
+    state[1] = constrain(state[1], 0.0, 1.0);
 
-    void discretizeStateAgent3(float state[2], int discreteState[2]) {
-        // Ogranicz wartości stanu do zakresu
-        state[0] = max(MIN_ERROR, min(MAX_ERROR, state[0]));
-        state[1] = max(MIN_LOAD, min(MAX_LOAD, state[1]));
+    // Dyskretyzacja stanów
+    discreteState[0] = (int)(state[0] * (NUM_STATES_AGENT3 - 1));
+    discreteState[1] = (int)(state[1] * (NUM_STATES_AGENT3 - 1));
+}
 
-        // Dyskretyzacja stanu agenta 3
-        discreteState[0] = (int)((state[0] - MIN_ERROR) * NUM_STATE_BINS_ERROR / (MAX_ERROR - MIN_ERROR));
-        discreteState[1] = (int)((state[1] - MIN_LOAD) * NUM_STATE_BINS_LOAD / (MAX_LOAD - MIN_LOAD));
-    }
     float chooseActionAgent3(int discreteState[2]) {
         // Implementacja wyboru akcji dla agenta 3
         int stateIndex = discreteState[0] * NUM_STATE_BINS_LOAD + discreteState[1];
@@ -1981,14 +1973,30 @@ void autoCalibrateSystem() {
 }
 
 void setup() {
+    // Inicjalizacja komunikacji szeregowej
+    Serial.begin(115200);
+    mySerial.begin(9600);
+
+    // Inicjalizacja EEPROM
+    EEPROM.begin(512);
+
+    // Inicjalizacja komponentów
+    initializePins();
+    initializeDisplay();
+    initializeServer();
+    initializeOptimizer();
+    displayWelcomeMessage();
+    initializeGlobalVariables();
+    initializeWiFi();
+    initializeWiFi();
     initializeSerial();
     initializeEEPROM();
     initializeComponents();
     displayWelcome();
     initializeGlobals();
-    initializeWiFiConnection();
     autoCalibrateSystem();
-
+    
+    // Inicjalizacja PID
     PID pid(1.0, 0.1, 0.01);
     float setpoint = 230.0; // Docelowe napięcie
     float measuredValue = readVoltage(); // Funkcja do odczytu napięcia
@@ -2056,6 +2064,7 @@ void initializeWiFi() {
         Serial.println("Nie udało się połączyć z WiFi");
     }
 }
+
 
 void initializePIDParams() {
     handlePIDParams(Kp, Ki, Kd, false);
@@ -2291,29 +2300,6 @@ float calculateEfficiency(float voltageIn, float currentIn, float externalVoltag
     return outputPower / inputPower;
 }
 
-
-void handleSerialCommands() {
-    if (Serial.available()) {
-        String command = Serial.readStringUntil('\n');
-        command.trim(); // Usuwa białe znaki na początku i końcu
-
-        if (command == "START") {
-            // Przykład: obsługa komendy START
-            Serial.println("Komenda START otrzymana");
-            // Dodaj tutaj kod do uruchomienia odpowiedniej funkcji
-        } else if (command == "STOP") {
-            // Przykład: obsługa komendy STOP
-            Serial.println("Komenda STOP otrzymana");
-            // Dodaj tutaj kod do zatrzymania odpowiedniej funkcji
-        } else if (command == "OPTIMIZE") {
-            // Przykład: obsługa komendy OPTIMIZE
-            Serial.println("Komenda OPTIMIZE otrzymana");
-            optimizePID();
-        } else {
-            Serial.println("Nieznana komenda: " + command);
-        }
-    }
-}
 
 void adjustControlFrequency() {
     static unsigned long lastAdjustmentTime = 0;
