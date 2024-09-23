@@ -96,6 +96,145 @@ void updateControlParameters(float params[3]);
 void handleSerialCommunication();
 void updateDisplay();
 
+// Implementacja funkcji discretizeStateAgent3
+void discretizeStateAgent3(float state[2], int discreteState[2]) {
+    // Zakładamy, że stany są w zakresie od 0 do 1
+    discreteState[0] = (int)(state[0] * NUM_STATES_AGENT3);
+    discreteState[1] = (int)(state[1] * NUM_STATES_AGENT3);
+}
+
+// Implementacja funkcji simulateVoltageControl
+float simulateVoltageControl(float Kp, float Ki, float Kd) {
+    // Przykładowa implementacja symulacji kontroli napięcia
+    float setpoint = VOLTAGE_SETPOINT;
+    float measuredValue = readVoltage();
+    float error = calculateError(setpoint, measuredValue);
+    float controlSignal = Kp * error + Ki * (error * controlFrequency) + Kd * (error / controlFrequency);
+    return controlSignal;
+}
+
+// Implementacja funkcji simulateExcitationControl
+float simulateExcitationControl() {
+    // Przykładowa implementacja symulacji kontroli wzbudzenia
+    float excitationCurrent = readExcitationCurrent();
+    return excitationCurrent;
+}
+
+// Implementacja funkcji simulateBrakingEffect
+float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionCoefficient) {
+    // Przykładowa implementacja symulacji efektu hamowania
+    return (rotationalSpeed * torque) / (frictionCoefficient * 10.0);
+}
+
+// Implementacja funkcji objectiveFunction
+float objectiveFunction(float params[3]) {
+    // Przykładowa implementacja funkcji celu
+    float Kp = params[0];
+    float Ki = params[1];
+    float Kd = params[2];
+    float controlSignal = simulateVoltageControl(Kp, Ki, Kd);
+    return controlSignal;
+}
+
+// Implementacja funkcji calibrateVoltage
+float calibrateVoltage(float rawVoltage) {
+    // Przykładowa implementacja kalibracji napięcia
+    return rawVoltage * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+// Implementacja funkcji calibrateCurrent
+float calibrateCurrent(float rawCurrent) {
+    // Przykładowa implementacja kalibracji prądu
+    return rawCurrent * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+// Implementacja funkcji autoTunePID
+void autoTunePID(PID &pid, float setpoint, float measuredValue) {
+    // Przykładowa implementacja automatycznego strojenia PID
+    float error = calculateError(setpoint, measuredValue);
+    pid.autoTune(error);
+}
+
+// Implementacja funkcji updateDisplay
+void updateDisplay() {
+    // Przykładowa implementacja aktualizacji wyświetlacza
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 0);
+    display.println("System Status:");
+    display.println("Voltage: " + String(readVoltage()) + " V");
+    display.println("Current: " + String(readExcitationCurrent()) + " A");
+    display.println("Braking Effect: " + String(readBrakingEffect()) + " %");
+    display.display();
+}
+
+// Implementacja funkcji chooseActionAgent3
+float chooseActionAgent3(int discreteState[2], float epsilon) {
+    // Przykładowa implementacja wyboru akcji dla Agenta 3
+    if (random(0, 100) < epsilon * 100) {
+        return random(0, NUM_ACTIONS_AGENT3);
+    } else {
+        int bestAction = 0;
+        float bestValue = qTableAgent3[discreteState[0]][0];
+        for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
+            if (qTableAgent3[discreteState[0]][i] > bestValue) {
+                bestValue = qTableAgent3[discreteState[0]][i];
+                bestAction = i;
+            }
+        }
+        return bestAction;
+    }
+}
+
+// Implementacja funkcji executeActionAgent3
+void executeActionAgent3(float action) {
+    // Przykładowa implementacja wykonania akcji dla Agenta 3
+    analogWrite(mosfetPin, action * PWM_INCREMENT);
+}
+
+// Implementacja funkcji calculateRewardAgent3
+float calculateRewardAgent3(float state[2], float action) {
+    // Przykładowa implementacja obliczania nagrody dla Agenta 3
+    float voltage = readVoltage();
+    float error = calculateError(VOLTAGE_SETPOINT, voltage);
+    return -abs(error);
+}
+
+// Implementacja funkcji updateQAgent3
+void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
+    // Przykładowa implementacja aktualizacji Q dla Agenta 3
+    int discreteState[2];
+    int discreteNextState[2];
+    discretizeStateAgent3(state, discreteState);
+    discretizeStateAgent3(nextState, discreteNextState);
+    float bestNextActionValue = qTableAgent3[discreteNextState[0]][0];
+    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
+        if (qTableAgent3[discreteNextState[0]][i] > bestNextActionValue) {
+            bestNextActionValue = qTableAgent3[discreteNextState[0]][i];
+        }
+    }
+    qTableAgent3[discreteState[0]][(int)action] += learningRate * (reward + discountFactor * bestNextActionValue - qTableAgent3[discreteState[0]][(int)action]);
+}
+
+// Implementacja funkcji readTemperature
+float readTemperature() {
+    // Przykładowa implementacja odczytu temperatury
+    return analogRead(A3) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+// Implementacja funkcji readBrakeWear
+float readBrakeWear() {
+    // Przykładowa implementacja odczytu zużycia hamulców
+    return analogRead(A4) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+// Implementacja funkcji readRotationalSpeed
+float readRotationalSpeed() {
+    // Przykładowa implementacja odczytu prędkości obrotowej
+    return analogRead(A5) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
 // Definicje stałych i zmiennych globalnych
 
 // Parametry dla Agenta 3
@@ -111,7 +250,6 @@ unsigned long previousMillisDisplay = 0;
 unsigned long previousMillisSerial = 0;
 const long intervalDisplay = 1000; // Aktualizacja wyświetlacza co 1 sekundę
 const long intervalSerial = 500; // Sprawdzanie komunikacji szeregowej co 0.5 sekundy
-
 
 
 
@@ -151,13 +289,26 @@ void hillClimbing() {
 
 void optimize() {
     // Przykładowa implementacja funkcji optymalizacyjnej
-    // Możesz dostosować tę funkcję do swoich potrzeb
+    float params[3] = {1.0, 1.0, 1.0};
+    float bestObjective = objectiveFunction(params);
+    for (int i = 0; i < 100; i++) {
+        suggestNextParameters(params);
+        float newObjective = objectiveFunction(params);
+        if (newObjective > bestObjective) {
+            bestObjective = newObjective;
+            getBestParams(params);
+        }
+    }
 }
+
 
 void getBestParams(float params[3]) {
     // Przykładowa implementacja funkcji zwracającej najlepsze parametry
-    // Możesz dostosować tę funkcję do swoich potrzeb
+    params[0] = 1.0;
+    params[1] = 1.0;
+    params[2] = 1.0;
 }
+
 
 float getBestObjective() {
     // Przykładowa implementacja funkcji zwracającej najlepszy wynik funkcji celu
@@ -315,12 +466,49 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
     qTableAgent1[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
 }
 
-
-
+    
 float objectiveFunction(float params[3]) {
     float Kp = params[0];
     float Ki = params[1];
     float Kd = params[2];
+
+    // Walidacja parametrów
+    if (Kp < MIN_KP || Kp > MAX_KP || Ki < MIN_KI || Ki > MAX_KI || Kd < MIN_KD || Kd > MAX_KD) {
+        Serial.println("Error: Invalid parameters");
+        return -1.0; // Zwróć wartość błędu
+    }
+
+    // Przykładowe wartości zadane i zmierzone (w rzeczywistości powinny pochodzić z systemu)
+    float setpoint = VOLTAGE_SETPOINT; // Docelowe napięcie
+    float measuredValues[10] = {228.0, 229.5, 230.5, 231.0, 229.0, 230.0, 230.2, 229.8, 230.1, 230.0};
+
+    // Inicjalizacja kontrolera PID
+    PID pidController(Kp, Ki, Kd);
+
+    // Symulacja działania kontrolera PID
+    float sse = 0.0; // Suma kwadratów błędów
+    for (int i = 0; i < 10; i++) {
+        float measuredValue = measuredValues[i];
+        float error = setpoint - measuredValue;
+        float controlSignal = pidController.compute(setpoint, measuredValue);
+        
+        // Aktualizacja sumy kwadratów błędów
+        sse += error * error;
+    }
+
+    // Uwzględnienie minimalnego hamowania przy wzbudzeniu do 25 amperów
+    float excitationCurrent = 25.0; // Przykładowa wartość wzbudzenia
+    float brakingEffect = simulateBrakingEffect(3000.0, 50.0, 0.8); // Przykładowe wartości prędkości obrotowej, momentu obrotowego i współczynnika tarcia
+    if (excitationCurrent >= MAX_CURRENT) {
+        sse += (MAX_BRAKING_EFFECT - brakingEffect) * (MAX_BRAKING_EFFECT - brakingEffect);
+    }
+
+    // Zwróć odwrotność SSE, ponieważ chcemy maksymalizować funkcję celu
+    return 1.0 / sse;
+}
+
+
+
 
     // Symulacja systemu z użyciem parametrów PID
     float voltageError = simulateVoltageControl(Kp, Ki, Kd);
@@ -499,9 +687,13 @@ float readTemperature() {
 
 // Funkcja odczytu zużycia hamulców (przykładowa implementacja)
 float readBrakeWear() {
-    // Przykładowa wartość zużycia hamulców
-    return 0.8; // 80% zużycia
+    // Symulacja zmieniającego się zużycia hamulców
+    static float brakeWear = 0.8; // Początkowa wartość zużycia hamulców (80%)
+    brakeWear += random(-5, 6) / 100.0; // Losowa zmiana w zakresie -0.05 do 0.05
+    brakeWear = constrain(brakeWear, 0.0, 1.0); // Ograniczenie wartości do zakresu 0-1 (0-100%)
+    return brakeWear;
 }
+
 
 // Funkcja odczytu prędkości obrotowej (przykładowa implementacja)
 float readRotationalSpeed() {
