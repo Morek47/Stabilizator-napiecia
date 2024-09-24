@@ -1,3 +1,4 @@
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <Arduino.h>
@@ -7,14 +8,15 @@
 #include <ArduinoEigen.h>
 #include <BayesOptimizer.h>
 
+// Definicje stałych i zmiennych
 #define MAX_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
 #define TOLERANCE 0.5 // Margines tolerancji
 #define NUM_STATES_AGENT2 100 // Definicja liczby stanów dla Agenta 2
 #define MAX_BRAKING_EFFECT 100.0 // Przykładowa maksymalna wartość efektu hamowania
 #define VOLTAGE_SETPOINT 230.0 // Docelowe napięcie w woltach
-#define PWM_INCREMENT 5 // Przykładowa wartość przyrostu PWM
-#define maxCurrent 25 // Maksymalny prąd w amperach
-
+#define PWM_INCREMENT 5 // Przykładowa wartość przyrostu P
+#define OLED_RESET -1 // Jeśli nie używasz pinu resetu, ustaw na -1
+Adafruit_SH1106 display(OLED_RESET);
 
 // Definicje pinów dla tranzystorów
 const int mosfetPin = D4;
@@ -64,6 +66,8 @@ bool stopCompute = false;
 HardwareSerial mySerial(1);
 float evaluateThreshold = 0.1;
 
+
+
 // Zmienna globalna do przechowywania poprzedniej wartości sygnału
 float previousFilteredValue = 0.0; // Inicjalizacja na 0.0
 
@@ -95,6 +99,30 @@ float calculateError(float setpoint, float measuredValue);
 void updateControlParameters(float params[3]);
 void handleSerialCommunication();
 void updateDisplay();
+void monitorErrors();
+void generateAndImplementFix(String error);
+void checkVoltage();
+void checkCurrent();
+void checkBrakingEffect();
+void resetVoltageController();
+void reduceExcitationCurrent();
+void calibrateBrakingEffect();
+void logError(String error);
+void readErrorLog();
+void detectAnomalies();
+void handleAnomaly(String anomaly);
+String predictError(float voltage, float current, float brakingEffect);
+void addFixFunction(String error, void(*fixFunction)());
+void defaultFixFunction();
+void trainModel();
+String predictWithModel(float voltage, float current, float brakingEffect);
+
+// Mapa funkcji naprawczych
+std::map<String, void(*)()> fixFunctions;
+
+// Prosty model uczenia maszynowego (przykład)
+float modelWeights[4] = {1.0, 1.0, 1.0, 1.0}; // Wagi modelu
+
 
 // Implementacja funkcji discretizeStateAgent3
 void discretizeStateAgent3(float state[2], int discreteState[2]) {
@@ -155,19 +183,6 @@ void autoTunePID(PID &pid, float setpoint, float measuredValue) {
     pid.autoTune(error);
 }
 
-// Implementacja funkcji updateDisplay
-void updateDisplay() {
-    // Przykładowa implementacja aktualizacji wyświetlacza
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 0);
-    display.println("System Status:");
-    display.println("Voltage: " + String(readVoltage()) + " V");
-    display.println("Current: " + String(readExcitationCurrent()) + " A");
-    display.println("Braking Effect: " + String(readBrakingEffect()) + " %");
-    display.display();
-}
 
 // Implementacja funkcji chooseActionAgent3
 float chooseActionAgent3(int discreteState[2], float epsilon) {
@@ -378,21 +393,6 @@ void handleSerialCommunication() {
         }
     }
 }
-
-void updateDisplay() {
-    // Przykładowa implementacja aktualizacji wyświetlacza
-    // Zakładamy, że mamy obiekt wyświetlacza o nazwie display
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 0);
-    display.println("System Status:");
-    display.println("Voltage: " + String(readVoltage()) + " V");
-    display.println("Current: " + String(readExcitationCurrent()) + " A");
-    display.println("Braking Effect: " + String(readBrakingEffect()));
-    display.display();
-}
-
 
 
 
@@ -2295,13 +2295,39 @@ void autoCalibrateSystem() {
     autoCalibrate();
 }
 
+// Inicjalizacja funkcji setup
 void setup() {
-    // Inicjalizacja komunikacji szeregowej
-    Serial.begin(115200);
-    mySerial.begin(9600);
+    Serial.begin(9600); // Inicjalizacja komunikacji szeregowej
+    while (!Serial) {
+        ; // Czekaj na otwarcie portu szeregowego
+    }
+
+    mySerial.begin(9600); // Inicjalizacja dodatkowej komunikacji szeregowej
 
     // Inicjalizacja EEPROM
-    EEPROM.begin(512);
+    EEPROM.begin(512); // Inicjalizacja EEPROM
+
+    // Inicjalizacja mapy funkcji naprawczych
+    fixFunctions["Voltage out of range"] = resetVoltageController;
+    fixFunctions["Current exceeds maximum limit"] = reduceExcitationCurrent;
+    fixFunctions["Braking effect out of range"] = calibrateBrakingEffect;
+
+    // Trenuj model uczenia maszynowego
+    trainModel();
+
+    // Inicjalizacja komunikacji I2C
+    Wire.begin();
+
+    // Inicjalizacja wyświetlacza
+    if (!display.begin(SH1106_I2C_ADDRESS, OLED_RESET)) {
+        Serial.println(F("SH1106 allocation failed"));
+        for (;;); // Zatrzymanie programu w przypadku niepowodzenia
+    }
+    display.display();
+    delay(2000);
+    display.clearDisplay();
+}
+
 
     // Inicjalizacja komponentów
     initializePins();
@@ -2343,8 +2369,11 @@ void initializeServer() {
 }
 
 void initializeDisplay() {
-    display.begin(SH1106_SWITCHCAPVCC, 0x3C);
-    display.clearDisplay();
+    // Inicjalizacja wyświetlacza
+    if (!display.begin(SH1106_I2C_ADDRESS, OLED_RESET)) {
+        Serial.println(F("SH1106 allocation failed"));
+        for (;;); // Zatrzymanie programu w przypadku niepowodzenia
+    }
     display.display();
     delay(2000);
     display.clearDisplay();
@@ -2592,23 +2621,41 @@ void energyManagement() {
     }
 }
 
-// Funkcja wyświetlania danych na ekranie w kolorze
-void displayData(float efficiencyPercent) {
+void updateDisplay(float efficiencyPercent) {
     display.clearDisplay();
+    display.setTextSize(1);
     display.setTextColor(WHITE, BLACK); // Ustawienie koloru tekstu na biały na czarnym tle
     display.setCursor(0, 0);
+    display.println("System Status:");
     display.print("Napięcie: ");
-    display.print(voltageIn[0]);
+    display.print(readVoltage());
     display.println(" V");
     display.print("Prąd: ");
-    display.print(currentIn[0]);
+    display.print(readExcitationCurrent());
     display.println(" A");
     display.print("Wydajność: ");
     display.print(efficiencyPercent);
     display.println(" %");
+    display.print("Braking Effect: ");
+    display.print(readBrakingEffect());
+    display.println(" %");
     display.display();
 }
 
+float readVoltage() {
+    // Przykładowa implementacja funkcji odczytu napięcia
+    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+float readExcitationCurrent() {
+    // Przykładowa implementacja funkcji odczytu prądu wzbudzenia
+    return analogRead(A1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+float readBrakingEffect() {
+    // Przykładowa implementacja funkcji odczytu efektu hamowania
+    return analogRead(A2) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
 
   void handleSerialCommands() {
     if (Serial.available()) {
@@ -2676,6 +2723,7 @@ void adjustControlFrequency() {
     }
 }
 
+// Inicjalizacja funkcji loop
 void loop() {
     unsigned long currentMillis = millis();
 
@@ -2746,13 +2794,195 @@ void loop() {
         Serial.print("Wydajność: "); Serial.println(bestEfficiency);
     }
 
+    // Wysyłanie danych do komputera
+    if (Serial) {
+        float dataToSend = analogRead(A0); // Przykładowe dane do wysłania
+        Serial.println(dataToSend); // Wysyłanie danych do komputera
+        delay(1000); // Opóźnienie dla przykładu
+    }
+}
+
+
     // Przykładowa logika sterowania
     if (currentCurrent > LOAD_THRESHOLD) {
         analogWrite(excitationBJT1Pin, 255);
     } else {
         analogWrite(excitationBJT1Pin, 0);
     }
+
+    // Monitorowanie błędów i wykrywanie anomalii
+    monitorErrors();
+    detectAnomalies();
+    delay(1000); // Sprawdzaj błędy co 1 sekundę
 }
+
+void monitorErrors() {
+    checkVoltage();
+    checkCurrent();
+    checkBrakingEffect();
+}
+
+void checkVoltage() {
+    float voltage = readVoltage();
+    if (voltage < 220.0 || voltage > 240.0) {
+        generateAndImplementFix("Voltage out of range");
+    }
+}
+
+void checkCurrent() {
+    float current = readExcitationCurrent();
+    if (current > MAX_CURRENT) {
+        generateAndImplementFix("Current exceeds maximum limit");
+    }
+}
+
+void checkBrakingEffect() {
+    float brakingEffect = readBrakingEffect();
+    if (brakingEffect < 0.0 || brakingEffect > 100.0) {
+        generateAndImplementFix("Braking effect out of range");
+    }
+}
+
+void generateAndImplementFix(String error) {
+    Serial.println("Error detected: " + error);
+    logError(error);
+    if (fixFunctions.find(error) != fixFunctions.end()) {
+        fixFunctions[error](); // Wywołanie odpowiedniej funkcji naprawczej
+    } else {
+        defaultFixFunction(); // Wywołanie domyślnej funkcji naprawczej
+    }
+}
+
+void resetVoltageController() {
+    Serial.println("Resetting voltage controller...");
+    // Kod resetowania kontrolera
+}
+
+void reduceExcitationCurrent() {
+    Serial.println("Reducing excitation current...");
+    // Kod zmniejszenia prądu wzbudzenia
+}
+
+void calibrateBrakingEffect() {
+    Serial.println("Calibrating braking effect...");
+    // Kod kalibracji efektu hamowania
+}
+
+float readVoltage() {
+    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+float readExcitationCurrent() {
+    return analogRead(A1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+float readBrakingEffect() {
+    return analogRead(A2) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+void logError(String error) {
+    int addr = 0;
+    while (addr < 512) {
+        if (EEPROM.read(addr) == 0) {
+            if (addr + error.length() + 1 < 512) { // Sprawdzenie, czy jest wystarczająco dużo miejsca
+                for (int i = 0; i < error.length(); i++) {
+                    EEPROM.write(addr + i, error[i]);
+                }
+                EEPROM.write(addr + error.length(), 0); // Zakończenie stringa
+                EEPROM.commit();
+            }
+            break;
+        }
+        addr += error.length() + 1;
+    }
+}
+
+void readErrorLog() {
+    int addr = 0;
+    while (addr < 512) {
+        char c = EEPROM.read(addr);
+        if (c == 0) break;
+        String error = "";
+        while (c != 0) {
+            error += c;
+            addr++;
+            c = EEPROM.read(addr);
+        }
+        Serial.println("Logged error: " + error);
+        addr++;
+    }
+}
+
+void detectAnomalies() {
+    float voltage = readVoltage();
+    float current = readExcitationCurrent();
+    float brakingEffect = readBrakingEffect();
+
+    // Wykorzystanie modelu uczenia maszynowego do przewidywania błędów
+    String predictedError = predictWithModel(voltage, current, brakingEffect);
+    if (predictedError != "") {
+        handleAnomaly(predictedError);
+    }
+}
+
+void handleAnomaly(String anomaly) {
+    Serial.println("Anomaly detected: " + anomaly);
+    logError(anomaly);
+    generateAndImplementFix(anomaly); // Wywołanie funkcji naprawczej dla anomalii
+}
+
+String predictError(float voltage, float current, float brakingEffect) {
+    // Prosta logika oparta na regułach
+    if (voltage < 220.0 || voltage > 240.0) {
+        return "Voltage out of range";
+    }
+    if (current > MAX_CURRENT) {
+        return "Current exceeds maximum limit";
+    }
+    if (brakingEffect < 0.0 || brakingEffect > 100.0) {
+        return "Braking effect out of range";
+    }
+    return "";
+}
+
+void addFixFunction(String error, void(*fixFunction)()) {
+    fixFunctions[error] = fixFunction;
+}
+
+void defaultFixFunction() {
+    Serial.println("No specific fix available. Executing default fix...");
+    // Kod domyślnej naprawy
+}
+
+void trainModel() {
+    // Przykładowe trenowanie modelu (w rzeczywistości powinno być bardziej zaawansowane)
+    modelWeights[0] = 1.2; // Waga dla napięcia
+    modelWeights[1] = 1.5; // Waga dla prądu
+    modelWeights[2] = 0.8; // Waga dla efektu hamowania
+    modelWeights[3] = 2.0; // Dodatkowa waga dla bardziej złożonego modelu
+}
+
+String predictWithModel(float voltage, float current, float brakingEffect) {
+    // Prosty model liniowy do przewidywania błędów
+    float score = modelWeights[0] * voltage + modelWeights[1] * current + modelWeights[2] * brakingEffect + modelWeights[3] * (voltage * current);
+    if (score > 1500) { // Zwiększony próg dla wykrywania większych anomalii
+        return "Anomaly detected by model";
+    }
+    return "";
+}
+
+void updateDisplay() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 0);
+    display.println("System Status:");
+    display.println("Voltage: " + String(readVoltage()) + " V");
+    display.println("Current: " + String(readExcitationCurrent()) + " A");
+    display.println("Braking Effect: " + String(readBrakingEffect()));
+    display.display();
+}
+
 
 
     // Inne operacje w pętli głównej
@@ -3080,10 +3310,11 @@ void adjustMinInputPower(float inputPower) {
     static float minObservedPower = 1e-6;
     static float maxObservedPower = 1e-3;
 
-    // Aktualizuj minimalną i maksymalną obserwowaną moc
-    if (inputPower > 0 && inputPower < minObservedPower) {
-        minObservedPower = inputPower;
-    }
+ // Aktualizuj minimalną i maksymalną obserwowaną moc
+if (inputPower > 0 && inputPower < minObservedPower) {
+    minObservedPower = inputPower;
+}
+
     if (inputPower > maxObservedPower) {
         maxObservedPower = inputPower;
     }
