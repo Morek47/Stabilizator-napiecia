@@ -6,6 +6,7 @@
 #include <Adafruit_SH1106.h>
 #include <ArduinoEigen.h>
 #include <BayesOptimizer.h>
+#include <map> 
 
 // Definicje stałych i zmiennych
 #define MAX_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
@@ -141,17 +142,21 @@ void defaultFixFunction();
 void trainModel();
 String predictWithModel(float voltage, float current, float brakingEffect);
 
+
+
 // Funkcja agenta 1
 void agent1Function(void *pvParameters) {
     for (;;) {
         if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
-            // Kod agenta 1 - stabilizacja napięcia
             float voltage = readVoltage();
             Serial.println("Agent 1: Odczytane napięcie: " + String(voltage));
 
+            // Ustawienie PWM dla agenta 1
+            analogWrite(mosfetPin, map(voltage, 0, 5, 0, 255));
+
             xSemaphoreGive(xSemaphore);
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS); // Opóźnienie dla symulacji
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -159,13 +164,15 @@ void agent1Function(void *pvParameters) {
 void agent2Function(void *pvParameters) {
     for (;;) {
         if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
-            // Kod agenta 2 - wzbudzanie prądu
             float current = readExcitationCurrent();
             Serial.println("Agent 2: Odczytany prąd wzbudzenia: " + String(current));
 
+            // Ustawienie PWM dla agenta 2
+            analogWrite(excitationBJT1Pin, map(current, 0, 5, 0, 255));
+
             xSemaphoreGive(xSemaphore);
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS); // Opóźnienie dla symulacji
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -173,15 +180,21 @@ void agent2Function(void *pvParameters) {
 void agent3Function(void *pvParameters) {
     for (;;) {
         if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
-            // Kod agenta 3 - kontrola efektu hamowania
             float brakingEffect = readBrakingEffect();
             Serial.println("Agent 3: Odczytany efekt hamowania: " + String(brakingEffect));
 
+            // Ustawienie PWM dla agenta 3
+            analogWrite(bjtPin1, map(brakingEffect, 0, 5, 0, 255));
+
             xSemaphoreGive(xSemaphore);
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS); // Opóźnienie dla symulacji
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
+
+
+
+
 
 // Deklaracja globalnych zmiennych dla optymalizatora
 BayesOptimizer optimizer;
@@ -198,31 +211,7 @@ float objectiveFunction(const float* params) {
     return abs(error); // Minimalizujemy wartość bezwzględną błędu
 }
 
-// Implementacja funkcji optimizePID
-void optimizePID() {
-    // Ustawienia optymalizatora
-    optimizer.setObjectiveFunction(objectiveFunction);
-    optimizer.setParameterBounds(0, MIN_KP, MAX_KP);
-    optimizer.setParameterBounds(1, MIN_KI, MAX_KI);
-    optimizer.setParameterBounds(2, MIN_KD, MAX_KD);
 
-    // Przeprowadzenie optymalizacji
-    for (int i = 0; i < 100; i++) { // Przykładowa liczba iteracji
-        float params[3];
-        optimizer.suggestNextParameters(params);
-        float objective = objectiveFunction(params);
-        optimizer.update(params, objective);
-
-        // Aktualizacja najlepszych parametrów
-        if (objective < bestObjective) {
-            bestObjective = objective;
-            memcpy(bestParams, params, sizeof(bestParams));
-        }
-    }
-
-    // Zastosowanie najlepszych parametrów
-    updateControlParameters(bestParams);
-}
 
 // Mapa funkcji naprawczych
 std::map<String, void(*)()> fixFunctions;
@@ -308,11 +297,12 @@ float calculateRewardAgent3(float state[2], float action) {
 
 // Implementacja funkcji updateQAgent3
 void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
-    // Przykładowa implementacja aktualizacji Q dla Agenta 3
+    // Dyskretyzacja stanów
     int discreteState[2];
-    discretizeStateAgent3(state, discreteState);
     int discreteNextState[2];
+    discretizeStateAgent3(state, discreteState);
     discretizeStateAgent3(nextState, discreteNextState);
+
 
     float bestNextActionValue = qTableAgent3[discreteNextState[0]][0];
     for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
@@ -341,7 +331,7 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
     discretizeStateAgent3(state, discreteState);
     discretizeStateAgent3(nextState, discreteNextState);
 
-    // Znalezienie najlepszej wartości Q dla następnego stanu
+ // Znalezienie najlepszej wartości Q dla następnego stanu
     float bestNextActionValue = qTableAgent3[discreteNextState[0]][0];
     for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
         if (qTableAgent3[discreteNextState[0]][i] > bestNextActionValue) {
@@ -376,7 +366,8 @@ float readRotationalSpeed() {
 // Parametry dla Agenta 3
 const int NUM_STATES_AGENT3 = 100;
 const int NUM_ACTIONS_AGENT3 = 10;
-float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3] = {0}; // Inicjalizacja tablicy Q dla Agenta 3
+float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3]; // Deklaracja tablicy Q dla Agenta 3
+
 float learningRate = 0.1; // Przykładowa wartość współczynnika uczenia
 float discountFactor = 0.9; // Przykładowa wartość współczynnika
 
@@ -393,22 +384,27 @@ float someFunctionOfOtherParameters(float rotationalSpeed, float torque, float f
     return (rotationalSpeed * torque) / (frictionCoefficient * 10.0);
 }
 
+// Implementacja funkcji hillClimbing
 void hillClimbing() {
     float currentParams[3] = {1.0, 1.0, 1.0}; // Początkowe parametry
     float bestParams[3] = {1.0, 1.0, 1.0}; // Inicjalizacja na te same wartości
     float bestObjective = objectiveFunction(currentParams);
 
-    for (int i = 0; i < 100; i++) {
-        float newParams[3];
-        for (int j = 0; j < 3; j++) {
-            newParams[j] = currentParams[j] + random(-1, 2) * 0.1;
-        }
-        float newObjective = objectiveFunction(newParams);
-        if (newObjective > bestObjective) {
-            memcpy(bestParams, newParams, sizeof(bestParams)); // Kopiowanie newParams do bestParams
-            bestObjective = newObjective;
+// Przeprowadzenie optymalizacji
+    for (int i = 0; i < 100; i++) { // Przykładowa liczba iteracji
+        float params[3];
+        optimizer.suggestNextParameters(params);
+        float objective = objectiveFunction(params);
+        optimizer.update(params, objective);
+
+        // Aktualizacja najlepszych parametrów
+        if (objective < bestObjective) {
+            bestObjective = objective;
+            memcpy(bestParams, params, sizeof(bestParams));
         }
     }
+
+ 
     memcpy(currentParams, bestParams, sizeof(currentParams)); // Kopiowanie bestParams do currentParams
 
     float rotationalSpeed = 3000.0;
@@ -467,7 +463,6 @@ float calculateError(float setpoint, float measuredValue) {
 }
 
 void updateControlParameters(float params[3]) {
-    // Przykładowa implementacja aktualizacji parametrów sterowania
     float Kp = params[0];
     float Ki = params[1];
     float Kd = params[2];
@@ -476,6 +471,7 @@ void updateControlParameters(float params[3]) {
     // Zakładamy, że mamy obiekt PID o nazwie pidController
     pidController.setTunings(Kp, Ki, Kd);
 }
+
 
 
 void handleSerialCommunication() {
@@ -2491,6 +2487,7 @@ void initializeWiFiConnection() {
 void autoCalibrateSystem() {
     autoCalibrate();
 }
+
 // Inicjalizacja funkcji setup
 void setup() {
     // Inicjalizacja komunikacji szeregowej
@@ -2532,12 +2529,19 @@ void setup() {
 
     // Inicjalizacja semafora
     xSemaphore = xSemaphoreCreateMutex();
+    if (xSemaphore == NULL) {
+        Serial.println("Nie udało się utworzyć semafora");
+        while (1); // Zatrzymaj program, jeśli nie udało się utworzyć semafora
+    }
 
+    // Inicjalizacja tablicy Q
+    initializeQTable();
+
+    // Tworzenie zadań dla agentów
     if (xSemaphore != NULL) {
-        // Tworzenie zadań dla agentów
-        xTaskCreate(agent1Function, "Agent 1", 1000, NULL, 1, NULL);
-        xTaskCreate(agent2Function, "Agent 2", 1000, NULL, 1, NULL);
-        xTaskCreate(agent3Function, "Agent 3", 1000, NULL, 1, NULL);
+        xTaskCreate(agent1Function, "Agent 1", 2048, NULL, 1, NULL);
+        xTaskCreate(agent2Function, "Agent 2", 2048, NULL, 1, NULL);
+        xTaskCreate(agent3Function, "Agent 3", 2048, NULL, 1, NULL);
     }
 
     // Inicjalizacja komponentów
@@ -2610,6 +2614,7 @@ void initializeWiFi() {
 }
 
 
+
 void initializeComponents() {
     // Inicjalizacja innych komponentów
     // Dodaj tutaj kod inicjalizujący inne komponenty
@@ -2641,10 +2646,11 @@ void initializePIDParams() {
     integral = 0;
 }
 
+// Inicjalizacja tablicy Q dla Agenta 3
 void initializeQTable() {
-    for (int i = 0; i < NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD; i++) {
-        for (int j = 0; j < NUM_ACTIONS; j++) {
-            qTableAgent1[i][j] = 0.0;
+    for (int i = 0; i < NUM_STATES_AGENT3; i++) {
+        for (int j = 0; j < NUM_ACTIONS_AGENT3; j++) {
+            qTableAgent3[i][j] = 0.0; // Inicjalizacja zerami
         }
     }
 }
