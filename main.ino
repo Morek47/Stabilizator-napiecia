@@ -142,8 +142,34 @@ void defaultFixFunction();
 void trainModel();
 String predictWithModel(float voltage, float current, float brakingEffect);
 
+// Funkcja do automatycznego dostosowywania progu 
 
-/ Struktura do przechowywania informacji o agentach
+void adjustMinInputPower(float inputPower) {
+    static float minObservedPower = 1e-6;
+    static float maxObservedPower = 1e-3;
+
+    // Aktualizacja minimalnej i maksymalnej zaobserwowanej mocy
+    if (inputPower < minObservedPower) {
+        minObservedPower = inputPower;
+    }
+    if (inputPower > maxObservedPower) {
+        maxObservedPower = inputPower;
+    }
+
+    // Przykładowa logika dostosowywania progu
+    float threshold = (minObservedPower + maxObservedPower) / 2;
+
+    // Wyświetlenie aktualnych wartości dla celów debugowania
+    Serial.print("Min Observed Power: ");
+    Serial.println(minObservedPower);
+    Serial.print("Max Observed Power: ");
+    Serial.println(maxObservedPower);
+    Serial.print("Current Threshold: ");
+    Serial.println(threshold);
+}
+
+
+// Struktura do przechowywania informacji o agentach
 struct Agent {
     int id;
     int priority; // Wyższy priorytet oznacza większą potrzebę
@@ -209,22 +235,17 @@ float readVoltage() {
     int rawValue = analogRead(A0);
     if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
         Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
-        xSemaphoreGive(resourceSemaphore); // Zwolnij semafor w przypadku błędu
         return -1.0; // Zwróć wartość błędu
     }
     float calibratedVoltage = calibrateVoltage(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
-    xSemaphoreGive(resourceSemaphore); // Zwolnij semafor po zakończeniu operacji
     return calibratedVoltage;
 }
-
-
 
 // Implementacja funkcji calibrateVoltage
 float calibrateVoltage(float rawVoltage) {
     // Przykładowa kalibracja: przelicz surowe napięcie na rzeczywiste napięcie
     return rawVoltage * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 }
-
 
 // Implementacja funkcji simulateVoltageControl
 float simulateVoltageControl(float Kp, float Ki, float Kd) {
@@ -247,19 +268,11 @@ float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionC
 }
 
 
-// Implementacja funkcji calibrateCurrent
-float calibrateCurrent(float rawCurrent) {
-    return rawCurrent * (5.0 / 1023.0);
-}
 
 // Implementacja funkcji lowPassFilter
 float lowPassFilter(float currentValue, float previousValue, float alpha) {
     return alpha * currentValue + (1 - alpha) * previousValue;
 }
-
-// Deklaracja semaforów
-SemaphoreHandle_t resourceSemaphore;
-SemaphoreHandle_t eepromSemaphore; // Dodano semafor EEPROM
 
 // Deklaracja semaforów
 SemaphoreHandle_t resourceSemaphore;
@@ -356,10 +369,6 @@ byte readEEPROM(int address) {
 }
 
 
-
-
-
-
 // Deklaracja globalnych zmiennych dla optymalizatora
 BayesOptimizer optimizer;
 float bestParams[3] = {0.0, 0.0, 0.0};
@@ -374,8 +383,6 @@ float objectiveFunction(const float* params) {
     float error = calculateError(VOLTAGE_SETPOINT, controlSignal);
     return abs(error); // Minimalizujemy wartość bezwzględną błędu
 }
-
-
 
 // Mapa funkcji naprawczych
 std::map<String, void(*)()> fixFunctions;
@@ -440,63 +447,45 @@ void calibrateBrakingEffect() {
     Serial.println("Efekt hamowania został skalibrowany: " + String(calibratedBrakingEffect));
 }
 
-// Implementacja funkcji calibrateVoltage
-float calibrateVoltage(float rawVoltage) {
-    // Przykładowa implementacja kalibracji napięcia
-    return rawVoltage * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+
+// Funkcja kalibracji prądu wzbudzenia
+float calibrateCurrent(float rawCurrent) {
+    // Współczynnik kalibracji
+    const float calibrationFactor = 0.95; // Korekta o -5%
+
+    // Kalibracja surowego prądu
+    float calibratedCurrent = rawCurrent * calibrationFactor;
+
+    // Sprawdzenie, czy skalibrowany prąd mieści się w dopuszczalnym zakresie
+    if (calibratedCurrent < 0) {
+        Serial.println("Błąd: Skalibrowany prąd jest mniejszy niż 0. Ustawiam na 0.");
+        calibratedCurrent = 0;
+    } else if (calibratedCurrent > MAX_CURRENT) {
+        Serial.println("Błąd: Skalibrowany prąd przekracza maksymalny dopuszczalny prąd. Ustawiam na MAX_CURRENT.");
+        calibratedCurrent = MAX_CURRENT;
+    }
+
+    // Wyświetlenie skalibrowanego prądu dla celów debugowania
+    Serial.print("Surowy prąd: ");
+    Serial.print(rawCurrent);
+    Serial.print(" A, Skalibrowany prąd: ");
+    Serial.print(calibratedCurrent);
+    Serial.println(" A");
+
+    return calibratedCurrent;
 }
 
-// Implementacja funkcji calibrateCurrent
-float calibrateCurrent(float rawCurrent) {
-    // Przykładowa implementacja kalibracji prądu
-    return rawCurrent * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
 
 // Implementacja funkcji autoTunePID
 void autoTunePID(float &Kp, float &Ki, float &Kd, float setpoint, float measuredValue) {
+    float error = calculateError(setpoint, measuredValue);
     // Przykładowa implementacja automatycznego dostrajania parametrów PID
-    // Możesz użyć algorytmu Ziegler-Nichols lub innego algorytmu dostrajania
     Kp = 1.0; // Przykładowa wartość
     Ki = 0.1; // Przykładowa wartość
     Kd = 0.01; // Przykładowa wartość
     Serial.println("Automatyczne dostrajanie PID zakończone.");
 }
-
-// Implementacja funkcji logError
-void logError(String error) {
-    // Przykładowa implementacja logowania błędu
-    Serial.println("Błąd: " + error);
-    // Możesz dodać kod do zapisywania błędów w pamięci EEPROM lub na karcie SD
-}
-
-
-// Prosty model uczenia maszynowego (przykład)
-float modelWeights[4] = {1.0, 1.0, 1.0, 1.0}; // Wagi modelu
-
-// Implementacja funkcji discretizeStateAgent3
-void discretizeStateAgent3(float state[2], int discreteState[2]) {
-    // Zakładamy, że stany są w zakresie od 0 do 1
-    discreteState[0] = (int)(state[0] * NUM_STATES_AGENT2);
-    discreteState[1] = (int)(state[1] * NUM_STATES_AGENT2);
-}
-
-
-
-
-// Implementacja funkcji calibrateCurrent
-float calibrateCurrent(float rawCurrent) {
-    return rawCurrent * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-
-
-// Implementacja funkcji autoTunePID
-void autoTunePID(PID &pid, float setpoint, float measuredValue) {
-    float error = calculateError(setpoint, measuredValue);
-    pid.autoTune(error);
-}
-
-
 
 // Implementacja funkcji chooseActionAgent3
 float chooseActionAgent3(int discreteState[2], float epsilon) {
@@ -518,6 +507,7 @@ float chooseActionAgent3(int discreteState[2], float epsilon) {
     }
 }
 
+// Implementacja funkcji calculateRewardAgent3
 float calculateRewardAgent3(float state[2], float action) {
     // Normalizacja stanów
     float normalizedState[2];
@@ -539,8 +529,6 @@ float calculateRewardAgent3(float state[2], float action) {
     return reward;
 }
 
-
-
 // Implementacja funkcji updateQAgent3
 void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
     // Dyskretyzacja stanów
@@ -548,7 +536,6 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
     int discreteNextState[2];
     discretizeStateAgent3(state, discreteState);
     discretizeStateAgent3(nextState, discreteNextState);
-
 
     float bestNextActionValue = qTableAgent3[discreteNextState[0]][0];
     for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
@@ -561,23 +548,7 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
 }
 
 
-
-
-// Implementacja funkcji updateQAgent3
-void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
-    // Dyskretyzacja stanów
-    int discreteState[2];
-    int discreteNextState[2];
-    discretizeStateAgent3(state, discreteState);
-    discretizeStateAgent3(nextState, discreteNextState);
-
- // Znalezienie najlepszej wartości Q dla następnego stanu
-    float bestNextActionValue = qTableAgent3[discreteNextState[0]][0];
-    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-        if (qTableAgent3[discreteNextState[0]][i] > bestNextActionValue) {
-            bestNextActionValue = qTableAgent3[discreteNextState[0]][i];
-        }
-    }
+   
 
     // Aktualizacja wartości Q dla bieżącego stanu i akcji
     qTableAgent3[discreteState[0]][(int)action] += learningRate * (reward + discountFactor * bestNextActionValue - qTableAgent3[discreteState[0]][(int)action]);
@@ -592,7 +563,7 @@ float readTemperature() {
 // Implementacja funkcji readBrakeWear
 float readBrakeWear() {
     // Przykładowa implementacja odczytu zużycia hamulców
-    return analogRead(A4) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);initializeQTable()
+    return analogRead(A4) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 }
 
 // Implementacja funkcji readRotationalSpeed
@@ -624,9 +595,6 @@ unsigned long previousMillisDisplay = 0;
 unsigned long previousMillisSerial = 0;
 const long intervalDisplay = 1000; // Aktualizacja wyświetlacza co 1 sekundę
 const long intervalSerial = 500; // Sprawdzanie komunikacji szeregowej co 0.5 sekundy
-
-// Implementacja funkcji
-
 
 // Implementacja funkcji hillClimbing
 void hillClimbing() {
@@ -678,7 +646,7 @@ void printOptimizationResults() {
     Kp = constrain(Kp, MIN_KP, MAX_KP);
     Ki = constrain(Ki, MIN_KI, MAX_KI);
     Kd = constrain(Kd, MIN_KD, MAX_KD);
-    bestEfficiency = constrain(bestEfficiency, 0.0, 100.0); // Zakładam, że wydajność mieści się w zakresie 0-100
+    float bestEfficiency = constrain(bestEfficiency, 0.0, 100.0); // Zakładam, że wydajność mieści się w zakresie 0-100
 
     Serial.println("Optymalizacja zakończona:");
     Serial.print("Kp: "); Serial.println(Kp);
@@ -702,26 +670,38 @@ float getBestObjective() {
     return 0.0;
 }
 
+
 void suggestNextParameters(float params[3]) {
     // Przykładowa implementacja funkcji sugerującej kolejne parametry
     // Możesz dostosować tę funkcję do swoich potrzeb
 }
 
 float readVoltage() {
-    // Przykładowa implementacja funkcji odczytu napięcia
-    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    int rawValue = analogRead(A0);
+    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
+        Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
+        return -1.0; // Zwróć wartość błędu
+    }
+    return calibrateVoltage(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
 }
 
 float readExcitationCurrent() {
-    // Przykładowa implementacja funkcji odczytu prądu wzbudzenia
-    return analogRead(A1) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    int rawValue = analogRead(A1);
+    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
+        Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
+        return -1.0; // Zwróć wartość błędu
+    }
+    return calibrateCurrent(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
 }
 
 float readBrakingEffect() {
-    // Przykładowa implementacja funkcji odczytu efektu hamowania
-    return analogRead(A2) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    int rawValue = analogRead(A2);
+    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
+        Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
+        return -1.0; // Zwróć wartość błędu
+    }
+    return calibrateBrakingEffect(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
 }
-
 
 void autoTunePID(PID &pid, float setpoint, float measuredValue) {
     // Przykładowa implementacja funkcji automatycznego strojenia PID
@@ -742,8 +722,6 @@ void updateControlParameters(float params[3]) {
     pidController.setTunings(Kp, Ki, Kd);
 }
 
-
-
 void handleSerialCommunication() {
     // Przykładowa implementacja obsługi komunikacji szeregowej
     if (Serial.available() > 0) {
@@ -762,7 +740,6 @@ void handleSerialCommunication() {
         }
     }
 }
-
 
 float chooseActionAgent3(int discreteState[2], float epsilon) {
     int stateIndex = discreteState[0] * 10 + discreteState[1];
@@ -783,11 +760,6 @@ float chooseActionAgent3(int discreteState[2], float epsilon) {
     }
 }
 
-
-// Definicje pinów dla tranzystorów
-const int mosfetPin = D4;
-
-// Funkcja przekształcająca akcję na wartość PWM
 void executeActionAgent3(float action) {
     // Przekształcenie akcji na wartość PWM (zakres 0-255)
     int pwmValue = (int)(action * 255.0);
@@ -802,20 +774,6 @@ void executeActionAgent3(float action) {
     // Ustawienie wartości PWM na pinie MOSFET
     analogWrite(mosfetPin, pwmValue);
 }
-
-// Przykładowe funkcje korzystające z executeActionAgent3
-void someFunction() {
-    float action = 1.2; // Przykładowa wartość akcji
-    executeActionAgent3(action);
-}
-
-void anotherFunction() {
-    float action = -0.5; // Przykładowa wartość akcji
-    executeActionAgent3(action);
-}
-
-
-
 
 float calculateRewardAgent3(float state[2], float action) {
     // Walidacja zakresu wartości
@@ -859,11 +817,21 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
         return;
     }
 
-    // Dyskretyzacja stanów
-    int discreteState[2];
-    int discreteNextState[2];
-    discretizeStateAgent3(state, discreteState);
-    discretizeStateAgent3(nextState, discreteNextState);
+    int stateIndex = (int)(state[0] * 10) * 10 + (int)(state[1] * 10);
+    int nextStateIndex = (int)(nextState[0] * 10) * 10 + (int)(nextState[1] * 10);
+    int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
+
+    float maxNextQValue = qTableAgent1[nextStateIndex][0];
+    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
+        if (qTableAgent1[nextStateIndex][i] > maxNextQValue) {
+            maxNextQValue = qTableAgent1[nextStateIndex][i];
+        }
+    }
+
+    qTableAgent1[stateIndex][actionIndex] += testLearningRate * (reward + testDiscountFactor * maxNextQValue - qTableAgent1[stateIndex][actionIndex]);
+}
+
+
 
     // Obliczenie indeksów stanów i akcji
     int stateIndex = discreteState[0] * NUM_STATES_AGENT3 + discreteState[1];
@@ -871,8 +839,7 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
     int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
 
     // Aktualna wartość Q 
-    float currentQ = qTableAgent3[stateIndex][actionIndex
-
+    float currentQ = qTableAgent3[stateIndex][actionIndex];
 
     // Maksymalna wartość Q dla następnego stanu
     float maxNextQ = qTableAgent3[nextStateIndex][0];
@@ -882,10 +849,10 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
         }
     }
 
-
     // Aktualizacja wartości Q
     qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
 }
+
 void handleSerialCommunication() {
     // Przykładowa implementacja obsługi komunikacji szeregowej
     if (Serial.available() > 0) {
@@ -924,9 +891,6 @@ float chooseActionAgent3(int discreteState[2], float epsilon) {
     }
 }
 
-// Definicje pinów dla tranzystorów
-const int mosfetPin = D4;
-
 // Funkcja przekształcająca akcję na wartość PWM
 void executeActionAgent3(float action) {
     // Przekształcenie akcji na wartość PWM (zakres 0-255)
@@ -996,11 +960,7 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
         return;
     }
 
-    // Dyskretyzacja stanów
-    int discreteState[2];
-    int discreteNextState[2];
-    discretizeStateAgent3(state, discreteState);
-    discretizeStateAgent3(nextState, discreteNextState);
+   
 
     // Obliczenie indeksów stanów i akcji
     int stateIndex = discreteState[0] * NUM_STATES_AGENT3 + discreteState[1];
@@ -1022,10 +982,32 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
     qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
 }
 
+// Dyskretyzacja stanów
+int discreteState[2];
+int discreteNextState[2];
+discretizeStateAgent3(state, discreteState);
+discretizeStateAgent3(nextState, discreteNextState);
 
-   
+// Obliczenie indeksów stanów i akcji
+int stateIndex = discreteState[0] * NUM_STATES_AGENT3 + discreteState[1];
+int nextStateIndex = discreteNextState[0] * NUM_STATES_AGENT3 + discreteNextState[1];
+int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
 
-   // Walidacja parametrów
+// Aktualna wartość Q 
+float currentQ = qTableAgent3[stateIndex][actionIndex];
+
+// Maksymalna wartość Q dla następnego stanu
+float maxNextQ = qTableAgent3[nextStateIndex][0];
+for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
+    if (qTableAgent3[nextStateIndex][i] > maxNextQ) {
+        maxNextQ = qTableAgent3[nextStateIndex][i];
+    }
+}
+
+// Aktualizacja wartości Q
+qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
+
+// Walidacja parametrów
 if (Kp < MIN_KP || Kp > MAX_KP || Ki < MIN_KI || Ki > MAX_KI || Kd < MIN_KD || Kd > MAX_KD) {
     Serial.println("Error: Invalid parameters");
     return -1.0; // Zwróć wartość błędu
@@ -1062,14 +1044,14 @@ return 1.0 / sse;
 // Symulacja systemu z użyciem parametrów PID
 float voltageError = simulateVoltageControl(Kp, Ki, Kd);
 float excitationCurrentError = simulateExcitationControl();
-float brakingEffect = simulateBrakingEffect();
+brakingEffect = simulateBrakingEffect(3000.0, 50.0, 0.8);
 
 // Funkcja celu: minimalizacja błędu napięcia, minimalizacja błędu prądu wzbudzenia i minimalizacja hamowania
 float objective = -voltageError - excitationCurrentError - brakingEffect;
 
 return objective;
 
-float simulateVoltageControl() {
+float simulateVoltageControl(float Kp, float Ki, float Kd) {
     float error = 0.0;
     float setpoint = 230.0; // Docelowe napięcie 230V
     float measuredValue = readVoltage();
@@ -1163,6 +1145,7 @@ float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionC
     return simulatedBrakingEffect;
 }
 
+
 // Przykładowa funkcja symulująca efekt hamowania bez czujników
 float readBrakingEffect(float load) {
     // Przykładowa prędkość obrotowa w RPM przy braku obciążenia
@@ -1176,20 +1159,16 @@ float readBrakingEffect(float load) {
     
     // Dostosowanie prędkości obrotowej w zależności od obciążenia
     float rotationalSpeed = baseRotationalSpeed * (1.0 - load);
-    return someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-}
+    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
     
-// Zakładamy, że mniejsza wartość efektu hamowania jest lepsza
-// Zastosowanie funkcji penalizującej większe wartości
-float penalizedBrakingEffect = 1.0 / (1.0 + brakingEffect);
+    // Zakładamy, że mniejsza wartość efektu hamowania jest lepsza
+    // Zastosowanie funkcji penalizującej większe wartości
+    float penalizedBrakingEffect = 1.0 / (1.0 + brakingEffect);
 
-return penalizedBrakingEffect;
+    return penalizedBrakingEffect;
+}
 
-// Kalibracja napięcia
-float calibrateVoltage(float rawVoltage) {
-    // Przykładowa kalibracja z bardziej precyzyjną korektą
-    const float calibrationFactor = 1.05; // Współczynnik kalibracji
-    float calibratedVoltage = rawVoltage * calibrationFactor;
+
 
     // Dodatkowa korekta na podstawie pomiarów
     if (calibratedVoltage > 5.0) {
@@ -1201,11 +1180,6 @@ float calibrateVoltage(float rawVoltage) {
     return calibratedVoltage;
 }
 
-// Funkcja kalibracji prądu wzbudzenia
-float calibrateCurrent(float rawCurrent) {
-    // Współczynnik kalibracji
-    const float calibrationFactor = 0.95; // Korekta o -5%
-    float calibratedCurrent = rawCurrent * calibrationFactor;
 
 
     // Dodatkowa korekta na podstawie pomiarów
@@ -1238,19 +1212,63 @@ float readBrakeWear() {
     return brakeWear;
 }
 
-
 // Funkcja odczytu prędkości obrotowej (przykładowa implementacja)
 float readRotationalSpeed() {
     // Przykładowa wartość prędkości obrotowej
     return 3000.0; // 3000 RPM
 }
 
-// Kalibracja efektu hamowania
+// Funkcja kalibracji efektu hamowania
 float calibrateBrakingEffect(float rawBrakingEffect) {
-    // Odczyt dodatkowych parametrów
-    float temperature = readTemperature();
-    float brakeWear = readBrakeWear();
-    float rotationalSpeed = readRotationalSpeed();
+    // Współczynnik kalibracji
+    const float calibrationFactor = 0.9; // Korekta o -10%
+
+    // Kalibracja surowego efektu hamowania
+    float calibratedBrakingEffect = rawBrakingEffect * calibrationFactor;
+
+    // Sprawdzenie, czy skalibrowany efekt hamowania mieści się w dopuszczalnym zakresie
+    if (calibratedBrakingEffect < 0) {
+        Serial.println("Błąd: Skalibrowany efekt hamowania jest mniejszy niż 0. Ustawiam na 0.");
+        calibratedBrakingEffect = 0;
+    } else if (calibratedBrakingEffect > MAX_BRAKING_EFFECT) {
+        Serial.println("Błąd: Skalibrowany efekt hamowania przekracza maksymalny dopuszczalny efekt. Ustawiam na MAX_BRAKING_EFFECT.");
+        calibratedBrakingEffect = MAX_BRAKING_EFFECT;
+    }
+
+    // Wyświetlenie skalibrowanego efektu hamowania dla celów debugowania
+    Serial.print("Surowy efekt hamowania: ");
+    Serial.print(rawBrakingEffect);
+    Serial.print(" A, Skalibrowany efekt hamowania: ");
+    Serial.print(calibratedBrakingEffect);
+    Serial.println(" A");
+
+    // Minimalizacja efektu hamowania
+    float minimizedBrakingEffect = minimizeBrakingEffect(calibratedBrakingEffect);
+
+    // Wyświetlenie zminimalizowanego efektu hamowania dla celów debugowania
+    Serial.print("Zminimalizowany efekt hamowania: ");
+    Serial.print(minimizedBrakingEffect);
+    Serial.println(" A");
+
+    return minimizedBrakingEffect;
+}
+
+// Funkcja minimalizacji efektu hamowania
+float minimizeBrakingEffect(float calibratedBrakingEffect) {
+    // Przykładowa logika minimalizacji
+    const float minimizationFactor = 0.8; // Korekta o -20%
+    float minimizedBrakingEffect = calibratedBrakingEffect * minimizationFactor;
+
+    // Sprawdzenie, czy zminimalizowany efekt hamowania mieści się w dopuszczalnym zakresie
+    if (minimizedBrakingEffect < 0) {
+        minimizedBrakingEffect = 0;
+    } else if (minimizedBrakingEffect > MAX_BRAKING_EFFECT) {
+        minimizedBrakingEffect = MAX_BRAKING_EFFECT;
+    }
+
+    return minimizedBrakingEffect;
+}
+
 
     // Kalibracja na podstawie temperatury
     float temperatureFactor = 1.0;
@@ -1279,10 +1297,8 @@ float calibrateBrakingEffect(float rawBrakingEffect) {
     return calibratedBrakingEffect;
 }
 
-
-
+// Przykładowa implementacja odczytu napięcia z pinu analogowego
 float readVoltage() {
-    // Przykładowa implementacja odczytu napięcia z pinu analogowego
     int rawValue = analogRead(muxInputPin);
     float voltage = (rawValue / (float)ADC_MAX_VALUE) * VOLTAGE_REFERENCE;
 
@@ -1295,9 +1311,6 @@ float readVoltage() {
     return filteredVoltage;
 }
 
-
-
-
 // Funkcja odczytu prądu wzbudzenia
 float readExcitationCurrent() {
     float rawCurrent = analogRead(A1) * (MAX_CURRENT / ADC_MAX_VALUE);
@@ -1306,9 +1319,6 @@ float readExcitationCurrent() {
     filteredCurrent = lowPassFilter(calibratedCurrent, filteredCurrent, 0.1);
     return filteredCurrent;
 }
-
-
-
 
 
 // Funkcja odczytu efektu hamowania
@@ -1320,53 +1330,30 @@ float readBrakingEffect() {
     return filteredBrakingEffect;
 }
 
-    class PID {
-    public:
-        PID(float kp, float ki, float kd) : Kp(kp), Ki(ki), Kd(kd), prevError(0), integral(0) {}
+class PID {
+public:
+    PID(float kp, float ki, float kd) : Kp(kp), Ki(ki), Kd(kd), prevError(0), integral(0) {}
 
-        float compute(float setpoint, float measuredValue) {
-            float error = setpoint - measuredValue;
-            integral += error;
-            float derivative = error - prevError;
-            float output = Kp * error + Ki * integral + Kd * derivative;
-            prevError = error;
-            return output;
-        }
-
-        void setTunings(float kp, float ki, float kd) {
-            Kp = kp;
-            Ki = ki;
-            Kd = kd;
-        }
-
-    private:
-        float Kp, Ki, Kd;
-        float prevError;
-        float integral;
-    };
-    
-
-// Przykładowa funkcja sugerująca nowe parametry z użyciem optymalizacji Bayesowskiej
-void suggestNextParameters(float params[3]) {
-    // Inicjalizacja optymalizatora Bayesowskiego
-    BayesOptimizer optimizer;
-
-    // Definicja zakresów dla parametrów
-    optimizer.setBounds(0, 0.0, 5.0); // Zakres dla parametru 0 (Kp)
-    optimizer.setBounds(1, 0.0, 1.0); // Zakres dla parametru 1 (Ki)
-    optimizer.setBounds(2, 0.0, 2.0); // Zakres dla parametru 2 (Kd)
-
-    // Dodanie punktów startowych
-    optimizer.addObservation({params[0], params[1], params[2]}, objectiveFunction(params));
-
-    // Optymalizacja w celu znalezienia najlepszych parametrów
-    std::vector<float> newParams = optimizer.optimize();
-
-    // Aktualizacja parametrów
-    for (int i = 0; i < 3; i++) {
-        params[i] = newParams[i];
+    float compute(float setpoint, float measuredValue) {
+        float error = setpoint - measuredValue;
+        integral += error;
+        float derivative = error - prevError;
+        float output = Kp * error + Ki * integral + Kd * derivative;
+        prevError = error;
+        return output;
     }
-}
+
+    void setTunings(float kp, float ki, float kd) {
+        Kp = kp;
+        Ki = ki;
+        Kd = kd;
+    }
+
+private:
+    float Kp, Ki, Kd;
+    float prevError;
+    float integral;
+};
 
 // Przykładowa funkcja sugerująca nowe parametry z użyciem optymalizacji Bayesowskiej
 void suggestNextParameters(float params[3]) {
@@ -1500,10 +1487,7 @@ Adafruit_SH1106 display(128, 64, &Wire, -1);
 int lastAction = 0;
 
 // Definicje zmiennych globalnych dla PID
-float Kp = 2.0, Ki = 0.5, Kd = 1.0;
 const float Kp_max = 5.0;
-
-
 
 // Deklaracja zmiennej globalnej
 float LOAD_THRESHOLD = 0.5;
@@ -1537,7 +1521,7 @@ void updateQTableAgent1(float state[2], float action, float reward, float nextSt
     }
 
     // Zaktualizuj wartość Q
-    qTableAgent1[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
+    qTableAgent1[stateIndex][actionIndex] = currentQ + testLearningRate * (reward + testDiscountFactor * maxNextQ - currentQ);
 }
 
 // Funkcja wybierająca akcję dla agenta 1
@@ -1614,6 +1598,7 @@ void communicateBetweenAgents() {
     }
 }
 
+
 // Funkcja wykonująca akcję agenta 3
 void performActionAgent3(float action) {
     switch ((int)action) {
@@ -1660,37 +1645,11 @@ void performActionAgent1(float action) {
             // Nieznana akcja
             break;
     }
-}
 
     // Upewnij się, że wartości PID są w odpowiednich zakresach
     Kp = constrain(Kp, 0.0, 5.0); // Zakres dla Kp: 0.0 - 5.0
     Ki = constrain(Ki, 0.0, 1.0); // Zakres dla Ki: 0.0 - 1.0
     Kd = constrain(Kd, 0.0, 2.0); // Zakres dla Kd: 0.0 - 2.0
-}
-
-// Funkcja wybierająca akcję dla agenta 3
-float selectActionAgent3(float state[2]) {
-    int stateIndex = (int)(state[0] * NUM_STATE_BINS_ERROR) * NUM_STATE_BINS_LOAD + (int)(state[1] * NUM_STATE_BINS_LOAD);
-
-    if (random(0, 100) < epsilon * 100) {
-        return random(0, NUM_ACTIONS);
-    } else {
-        float bestAction = 0;
-        float maxQ = qTableAgent3[stateIndex][0];
-        for (int i = 1; i < NUM_ACTIONS; i++) {
-            if (qTableAgent3[stateIndex][i] > maxQ) {
-                maxQ = qTableAgent3[stateIndex][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-}
-
-// Upewnij się, że wartości PID są w odpowiednich zakresach
-Kp = constrain(Kp, 0.0, 5.0); // Zakres dla Kp: 0.0 - 5.0
-Ki = constrain(Ki, 0.0, 1.0); // Zakres dla Ki: 0.0 - 1.0
-Kd = constrain(Kd, 0.0, 2.0); // Zakres dla Kd: 0.0 - 2.0
 }
 
 // Funkcja wybierająca akcję dla agenta 3
@@ -1787,8 +1746,7 @@ float simulateSystem(float Kp, float Ki, float Kd) {
     return simulatedEfficiency / simulationSteps; // Zwracanie średniej wydajności
 }
 
-
-  // Parametry modelu stabilizatora
+// Parametry modelu stabilizatora
 float systemGain = 1.0;
 float systemTimeConstant = 1.0;
 float systemDelay = 0.1;
@@ -1924,6 +1882,7 @@ void handleSerialCommands() {
     }
 }
 
+
 // Funkcja automatycznego dostrajania PID
 void autoTunePID() {
     float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
@@ -1950,7 +1909,8 @@ void autoTunePID() {
         if (currentError < minError) {
             minError = currentError;
         }
-                if ((maxError - minError) > 0.1) {
+
+        if ((maxError - minError) > 0.1) {
             oscillationsDetected = true;
             Tu = (currentTime - startTime) / 1000.0; // Okres oscylacji w sekundach
             Ku = 4.0 * (VOLTAGE_SETPOINT / (maxError - minError));
@@ -1959,6 +1919,26 @@ void autoTunePID() {
         float controlSignal = Kp * currentError;
         analogWrite(mosfetPin, constrain(controlSignal, 0, 255));
         delay(100); // Opóźnienie dla stabilizacji
+    }
+
+    if (oscillationsDetected) {
+        Kp = 0.6 * Ku;
+        Ki = 2.0 * Kp / Tu;
+        Kd = Kp * Tu / 8.0;
+        Serial.println("Optymalizacja PID zakończona:");
+        Serial.print("Kp: "); Serial.println(Kp);
+        Serial.print("Ki: "); Serial.println(Ki);
+        Serial.print("Kd: "); Serial.println(Kd);
+
+        // Zapisz najlepsze parametry w pamięci EEPROM
+        handlePIDParams(Kp, Ki, Kd, true);
+
+        // Wyślij najlepsze parametry do komputera
+        Serial.print("Zapisane parametry PID: Kp="); Serial.print(Kp);
+        Serial.print(", Ki="); Serial.print(Ki);
+        Serial.print(", Kd="); Serial.println(Kd);
+    } else {
+        Serial.println("Nie udało się wykryć oscylacji w czasie optymalizacji PID.");
     }
 }
 
@@ -1985,49 +1965,6 @@ void handlePIDParams(float &Kp, float &Ki, float &Kd, bool save) {
     }
 }
 
-// Funkcja optymalizacji PID z zapisywaniem wyników
-void optimizePID() {
-    // Ustawienia początkowe
-    float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
-    float Tu = 0.0; // Okres oscylacji
-    bool oscillationsDetected = false;
-    unsigned long startTime = millis();
-    unsigned long currentTime;
-    float previousError = 0.0;
-    float currentError;
-    float maxError = 0.0;
-    float minError = 0.0;
-
-    // Wstępne ustawienia PID
-    Kp = 1.0;
-    Ki = 0.0;
-    Kd = 0.0;
-
-    // Wprowadzenie oscylacji
-    while (!oscillationsDetected && (millis() - startTime) < TUNING_TIMEOUT) {
-        currentTime = millis();
-        currentError = VOLTAGE_SETPOINT - currentVoltage;
-
-        // Sprawdzenie oscylacji
-        if (currentError > maxError) {
-            maxError = currentError;
-        }
-        if (currentError < minError) {
-            minError = currentError;
-        }
-
-        // Wykrywanie oscylacji
-        if ((maxError - minError) > 0.1) {
-            oscillationsDetected = true;
-            Tu = (currentTime - startTime) / 1000.0; // Okres oscylacji w sekundach
-            Ku = 4.0 * (VOLTAGE_SETPOINT / (maxError - minError));
-        }
-    }
-// Deklaracja globalnych zmiennych dla optymalizatora
-BayesOptimizer optimizer;
-float bestParams[3] = {0.0, 0.0, 0.0};
-float bestObjective = FLT_MAX;
-
 // Funkcja celu dla optymalizatora
 float objectiveFunction(const float* params) {
     float Kp = params[0];
@@ -2040,6 +1977,11 @@ float objectiveFunction(const float* params) {
 
 // Funkcja optymalizacji PID
 void optimizePID() {
+    // Deklaracja globalnych zmiennych dla optymalizatora
+    BayesOptimizer optimizer;
+    float bestParams[3] = {0.0, 0.0, 0.0};
+    float bestObjective = FLT_MAX;
+
     // Ustawienia początkowe
     float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
     float Tu = 0.0; // Okres oscylacji
@@ -2105,7 +2047,6 @@ void updateControl() {
     delay(100); // Opóźnienie dla stabilizacji
 }
 
-
 int analogRead(int pin) {
     // Implementacja odczytu analogowego
     // W przypadku ESP8266, używamy funkcji analogRead z biblioteki Arduino
@@ -2113,7 +2054,7 @@ int analogRead(int pin) {
 }
 
 // Inicjalizacja tablicy Q-learning
-float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS][3] = {0};
+float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS] = {0};
 
 // Funkcja konwertująca stan na indeks tablicy Q
 int getStateIndex(float error, float load, float kp, float ki, float kd) {
@@ -2132,10 +2073,10 @@ int chooseAction(int stateIndex) {
         return random(0, NUM_ACTIONS); // Wybór losowej akcji
     } else {
         int bestAction = 0;
-        float bestValue = qTable[stateIndex][0][0];
+        float bestValue = qTable[stateIndex][0];
         for (int i = 1; i < NUM_ACTIONS; i++) {
-            if (qTable[stateIndex][i][0] > bestValue) {
-                bestValue = qTable[stateIndex][i][0];
+            if (qTable[stateIndex][i] > bestValue) {
+                bestValue = qTable[stateIndex][i];
                 bestAction = i;
             }
         }
@@ -2145,20 +2086,20 @@ int chooseAction(int stateIndex) {
 
 // Funkcja aktualizująca tablicę Q
 void updateQTable(int stateIndex, int action, float reward, int nextStateIndex) {
-    float bestNextValue = qTable[nextStateIndex][0][0];
+    float bestNextValue = qTable[nextStateIndex][0];
     for (int i = 1; i < NUM_ACTIONS; i++) {
-        if (qTable[nextStateIndex][i][0] > bestNextValue) {
-            bestNextValue = qTable[nextStateIndex][i][0];
+        if (qTable[nextStateIndex][i] > bestNextValue) {
+            bestNextValue = qTable[nextStateIndex][i];
         }
     }
-    qTable[stateIndex][action][0] = (1 - learningRate) * qTable[stateIndex][action][0] + learningRate * (reward + discountFactor * bestNextValue);
+    qTable[stateIndex][action] = (1 - learningRate) * qTable[stateIndex][action] + learningRate * (reward + discountFactor * bestNextValue);
 }
 
 // Główna pętla uczenia
 void qLearningAgent3() {
     // Inicjalizacja zmiennych stanu
     float error = VOLTAGE_SETPOINT - currentVoltage;
-    float load = currentIn[0]; // Przykładowe obciążenie
+    float load = currentCurrent; // Przykładowe obciążenie
     int stateIndex = getStateIndex(error, load, Kp, Ki, Kd);
     int action = chooseAction(stateIndex);
 
@@ -2173,49 +2114,17 @@ void qLearningAgent3() {
     }
 
     // Symulacja systemu z nowymi parametrami PID
-    float newError = VOLTAGE_SETPOINT - simulateSystem(Kp, Ki, Kd);
+    float newError = VOLTAGE_SETPOINT - simulateVoltageControl(Kp, Ki, Kd);
     float reward = -abs(newError); // Nagroda jest ujemną wartością błędu, aby minimalizować błąd
 
     int nextStateIndex = getStateIndex(newError, load, Kp, Ki, Kd);
     updateQTable(stateIndex, action, reward, nextStateIndex);
 }
-   
-   unsigned long lastUpdateAgent1 = 0;
+
+unsigned long lastUpdateAgent1 = 0;
 unsigned long lastUpdateAgent2 = 0;
 unsigned long lastUpdateAgent3 = 0;
 const unsigned long updateInterval = 1;
-
-// Funkcja wybierająca akcję na podstawie stanu
-int chooseAction(int stateIndex, float qTable[][NUM_ACTIONS], float epsilon) {
-    if (random(0, 100) < epsilon * 100) {
-        // Eksploracja: wybierz losową akcję
-        return random(0, NUM_ACTIONS);
-    } else {
-        // Eksploatacja: wybierz najlepszą akcję na podstawie tablicy Q
-        float maxQ = -INFINITY;
-        int bestAction = 0;
-        for (int a = 0; a < NUM_ACTIONS; a++) {
-            float qValue = qTable[stateIndex][a];
-            if (qValue > maxQ) {
-                maxQ = qValue;
-                bestAction = a;
-            }
-        }
-        return bestAction;
-    }
-}
-
-// Funkcja aktualizująca tablicę Q
-void updateQTable(int stateIndex, int action, float reward, int nextStateIndex, float qTable[][NUM_ACTIONS], float learningRate, float discountFactor) {
-    float maxQNext = -INFINITY;
-    for (int a = 0; a < NUM_ACTIONS; a++) {
-        float qValue = qTable[nextStateIndex][a];
-        if (qValue > maxQNext) {
-            maxQNext = qValue;
-        }
-    }
-    qTable[stateIndex][action] += learningRate * (reward + discountFactor * maxQNext - qTable[stateIndex][action]);
-}
 
 // Funkcja mapująca stan na indeks tablicy Q
 int getStateIndex(float error, float load, float Kp, float Ki, float Kd, float MIN_ERROR, float MAX_ERROR, float MIN_LOAD, float MAX_LOAD, float MIN_KP, float MAX_KP, float MIN_KI, float MAX_KI, float MIN_KD, float MAX_KD) {
@@ -2231,6 +2140,7 @@ int getStateIndex(float error, float load, float Kp, float Ki, float Kd, float M
            stateKd;
 }
 
+
 # Cel projektu:
 
 System stabilizacji napięcia z wykorzystaniem trzech agentów uczących się:
@@ -2244,9 +2154,8 @@ System stabilizacji napięcia z wykorzystaniem trzech agentów uczących się:
 * Agent1 i Agent2 przekazują informacje zwrotne do Agent3, informując go o wpływie swoich akcji na hamowanie.
 * Agent3 wykorzystuje te informacje zwrotne do podejmowania decyzji, które minimalizują hamowanie, jednocześnie wspierając cele innych agentów.
 
-# Ostateczny cel:
-
-Osiągnięcie minimalnego hamowania przy jednoczesnym utrzymaniu wysokiego prądu wzbudzenia w cewkach i stabilizacji napięcia na poziomie 230V.
+// Ostateczny cel:
+// Osiągnięcie minimalnego hamowania przy jednoczesnym utrzymaniu wysokiego prądu wzbudzenia w cewkach i stabilizacji napięcia na poziomie 230V.
 
 class Agent1 {
 public:
@@ -2323,48 +2232,50 @@ public:
         if (excitation_current > excitation_current_threshold && excitation_current <= 23) { 
             nagroda += COMPENSATION_FACTOR; 
         }
-// Dodatkowa nagroda za stabilizację napięcia na poziomie 230V
-if (abs(napiecie - VOLTAGE_SETPOINT) < 1.0) {
-    nagroda += 10.0; // Przykładowa wartość nagrody, dostosuj według potrzeb
-}
 
-return nagroda;
-}
-
-void updateQ(int state, int action, float reward, int nextState) {
-    float bestNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS);
-    qTable[state][action] += learningRate * (reward + discountFactor * bestNextQ - qTable[state][action]);
-}
-
-void monitorPerformanceAndAdjust() {
-    static unsigned long lastAdjustmentTime = 0;
-    if (millis() - lastAdjustmentTime > 1000) {
-        float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-        float efficiencyPercent = efficiency * 100.0;
-
-        // advancedLogData(efficiencyPercent); // Upewnij się, że ta funkcja jest zaimplementowana
-
-        if (efficiencyPercent < 90.0) {
-            excitationGain += 0.1;
-        } else if (efficiencyPercent > 95.0) {
-            excitationGain -= 0.1;
+        // Dodatkowa nagroda za stabilizację napięcia na poziomie 230V
+        if (abs(napiecie - VOLTAGE_SETPOINT) < 1.0) {
+            nagroda += 10.0; // Przykładowa wartość nagrody, dostosuj według potrzeb
         }
 
-        excitationGain = constrain(excitationGain, 0.0, 1.0);
-
-        lastAdjustmentTime = millis();
+        return nagroda;
     }
-}
+
+    void updateQ(int state, int action, float reward, int nextState) {
+        float bestNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS);
+        qTable[state][action] += learningRate * (reward + discountFactor * bestNextQ - qTable[state][action]);
+    }
+
+    void monitorPerformanceAndAdjust() {
+        static unsigned long lastAdjustmentTime = 0;
+        if (millis() - lastAdjustmentTime > 1000) {
+            float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
+            float efficiencyPercent = efficiency * 100.0;
+
+            // advancedLogData(efficiencyPercent); // Upewnij się, że ta funkcja jest zaimplementowana
+
+            if (efficiencyPercent < 90.0) {
+                excitationGain += 0.1;
+            } else if (efficiencyPercent > 95.0) {
+                excitationGain -= 0.1;
+            }
+
+            excitationGain = constrain(excitationGain, 0.0, 1.0);
+
+            lastAdjustmentTime = millis();
+        }
+    }
 
 private:
-float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS];
+    float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS];
+};
 
 UWAGA:
 /* Agent 2 jest zaprojektowany wyłącznie do STEROWANIA (ZWIĘKSZANIA) prądu wzbudzenia w cewkach.
  * Nie należy dodawać funkcjonalności zmniejszania prądu wzbudzenia ani do Agenta 2, ani do Agenta 3.
  */
 
-class Agent2 {
+ class Agent2 {
 public:
     float qTable[NUM_STATES_AGENT2][NUM_ACTIONS_AGENT2];
     int state;
@@ -2380,7 +2291,7 @@ public:
     }
 
     int chooseAction() {
-        if (random(0, 100) < epsilon * 100) {
+        if (random(0, 100) < testEpsilon * 100) {
             return random(0, NUM_ACTIONS_AGENT2);
         } else {
             int bestAction = 0;
@@ -2419,7 +2330,7 @@ public:
             case 3:
                 // Zwiększ prąd wzbudzenia w cewkach 1, 3, 5, 7, 9, 11
                 if (current + PWM_INCREMENT <= MAX_CURRENT) {
-                    for (int i = 0; i < 24; i += 2) {
+                    for (int i = 1; i <= 11; i += 2) {
                         analogWrite(excitationBJT1Pin, current + PWM_INCREMENT);
                     }
                 }
@@ -2432,11 +2343,11 @@ public:
 
     void updateQ(int nextState, float reward, int action) {
         float maxNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS_AGENT2);
-        qTable[state][action] += learningRate * (reward + discountFactor * maxNextQ - qTable[state][action]);
+        qTable[state][action] += testLearningRate * (reward + testDiscountFactor * maxNextQ - qTable[state][action]);
     }
 
     int discretizeState(float error, float load) {
-        int errorBin = (int)(error * NUM_STATE_BINS_ERROR / (VOLTAGE_SETPOINT * 2));
+        int errorBin = (int)((error + VOLTAGE_SETPOINT) * NUM_STATE_BINS_ERROR / (VOLTAGE_SETPOINT * 2));
         int loadBin = (int)(load * NUM_STATE_BINS_LOAD);
         return errorBin * NUM_STATE_BINS_LOAD + loadBin;
     }
@@ -2473,7 +2384,7 @@ public:
 
         // Odczyt nowego stanu
         float newError = VOLTAGE_SETPOINT - currentVoltage;
-        float newLoad = currentCurrent / maxCurrent; // Normalizacja obciążenia
+        float newLoad = currentCurrent / MAX_CURRENT; // Normalizacja obciążenia
 
         int nextState = discretizeState(newError, newLoad);
 
@@ -2490,8 +2401,10 @@ public:
 };
 
 
+  
 
-/*
+
+  /*
  * UWAGA:
  * Klasa Agent3 jest zaprojektowana tak, aby zawsze zmniejszać obciążenie prądnicy.
  * Proszę nie zmieniać tej funkcjonalności, aby uniknąć nieporozumień i błędów w działaniu systemu.
@@ -2509,11 +2422,10 @@ public:
     }
 
     // Funkcja wykonująca akcję agenta 3
-    void performAction(float action) {
+    void performAction() {
         // Agent 3 zawsze zmniejsza hamowanie
         currentBrakePWM = max(currentBrakePWM - PWM_INCREMENT, MIN_BRAKE_PWM);
         analogWrite(mosfetPin, currentBrakePWM);
-        agent3MinimizedBraking = true; // Ustawienie flagi
     }
 
     // Wykonanie akcji
@@ -2603,10 +2515,10 @@ public:
         // Implementacja wyboru akcji dla agenta 3
         int stateIndex = discreteState[0] * NUM_STATE_BINS_LOAD + discreteState[1];
         float bestAction = 0;
-        float maxQ = qTableAgent1[stateIndex][0];
+        float maxQ = qTable[stateIndex][0];
         for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-            if (qTableAgent1[stateIndex][i] > maxQ) {
-                maxQ = qTableAgent1[stateIndex][i];
+            if (qTable[stateIndex][i] > maxQ) {
+                maxQ = qTable[stateIndex][i];
                 bestAction = i;
             }
         }
@@ -2623,24 +2535,35 @@ int main() {
     Agent3 agent3;
 
     // Przykładowa logika główna
-    float voltage = 230.0;
-    float current = 25.0;
+    float state[2] = {230.0, 25.0};
+    int discreteState[2];
 
-    agent3.discretizeStateAgent3(voltage, current);
-    int action = agent3.chooseActionAgent3();
+    agent3.discretizeStateAgent3(state, discreteState);
+    int action = agent3.chooseActionAgent3(discreteState);
     agent3.executeActionAgent3(action);
-    float reward = agent3.calculateRewardAgent3(voltage, current);
-    int nextState = agent3.currentState; // Zakładając, że stan jest aktualizowany gdzieś indziej
-    agent3.updateQ(agent3.currentState, action, reward, nextState, learningRate, discountFactor);
+    float reward = agent3.calculateRewardAgent3(state[0], state[1]);
+    int nextState = agent3.discretizeStateAgent3(); // Zakładając, że stan jest aktualizowany gdzieś indziej
+    agent3.updateQAgent3(discreteState[0], action, reward, nextState);
 
     return 0;
 }
 
-     // Przykładowe dane wejściowe
+}
+
+ // Przykładowe dane wejściowe
 int states[] = {0, 1, 2};
 int actions[] = {0, 1, 2};
 float rewards[] = {1.0, 0.5, -1.0};
 int nextStates[] = {1, 2, 0};
+
+// Przypisz testowe wartości do używanych zmiennych raz na starcie
+static bool initialized = false;
+if (!initialized) {
+    epsilon = testEpsilon;
+    learningRate = testLearningRate;
+    discountFactor = testDiscountFactor;
+    initialized = true;
+}
 
 while (true) {
     // Aktualizacja Q-wartości dla Agent1 i Agent3
@@ -2654,48 +2577,6 @@ while (true) {
 
     // Przykładowe opóźnienie, aby nie wykonywać pętli zbyt często
     std::this_thread::sleep_for(std::chrono::seconds(1));
-}
-
-// Przypisz testowe wartości do używanych zmiennych raz na starcie
-static bool initialized = false;
-if (!initialized) {
-    epsilon = testEpsilon;
-    learningRate = testLearningRate;
-    discountFactor = testDiscountFactor;
-    initialized = true;
-}
-
-using System;
-
-class Program
-{
-    static void Main()
-    {
-        int totalEpochs = 100; // Całkowita liczba epok
-        int completedEpochs = 0; // Ukończone epoki
-
-        // Symulacja procesu nauki
-        for (int epoch = 1; epoch <= totalEpochs; epoch++) // Poprawiono błąd składniowy
-        {
-            // Symulacja treningu AI
-            TrainAI(epoch);
-
-            // Aktualizacja ukończonych epok
-            completedEpochs = epoch;
-
-            // Obliczenie postępu w procentach
-            double progress = (double)completedEpochs / totalEpochs * 100;
-
-            // Wyświetlenie postępu
-            Console.WriteLine($"Postęp nauki AI: {progress:F2}%");
-        }
-    }
-
-    static void TrainAI(int epoch)
-    {
-        // Symulacja treningu AI (zastąp rzeczywistym kodem treningu)
-        System.Threading.Thread.Sleep(50); // Symulacja czasu treningu
-    }
 }
 
 void advancedLogData() {
@@ -2756,11 +2637,6 @@ void updateOptimizer() {
     }
 }
 
-// Dodatkowa inicjalizacja
-EEPROM.begin(512); // Inicjalizacja pamięci EEPROM
-handlePIDParams(Kp, Ki, Kd, false); // Wczytaj parametry PID z pamięci EEPROM
-optimizePID(); // Optymalizacja PID na starcie
-
 // Inicjalizacja portu szeregowego
 void initializeSerial() {
     Serial.begin(115200);
@@ -2804,6 +2680,15 @@ void autoCalibrateSystem() {
 }
 
 void setup() {
+    // Inicjalizacja komunikacji szeregowej
+    Serial.begin(115200); // Ustawienie prędkości transmisji na 115200 bps
+    while (!Serial) {
+        ; // Czekaj na otwarcie portu szeregowego
+    }
+
+    // Inicjalizacja dodatkowej komunikacji szeregowej
+    mySerial.begin(9600);
+
     // Inicjalizacja semaforów
     resourceSemaphore = xSemaphoreCreateBinary();
     eepromSemaphore = xSemaphoreCreateBinary();
@@ -2816,15 +2701,6 @@ void setup() {
     currentVoltage = 0.0;
     currentCurrent = 0.0;
     currentError = 0.0;
-
-    // Inicjalizacja komunikacji szeregowej
-    Serial.begin(115200);
-    while (!Serial) {
-        ; // Czekaj na otwarcie portu szeregowego
-    }
-
-    // Inicjalizacja dodatkowej komunikacji szeregowej
-    mySerial.begin(9600);
 
     // Inicjalizacja EEPROM
     EEPROM.begin(512);
@@ -2852,9 +2728,8 @@ void setup() {
         Serial.println(F("SH1106 allocation failed"));
         for (;;); // Zatrzymanie programu w przypadku niepowodzenia
     }
-}
 
-
+    // Wyświetlenie powitalnej wiadomości
     display.display();
     delay(2000);
     display.clearDisplay();
@@ -2874,6 +2749,8 @@ void setup() {
     displayWelcomeMessage();
     initializeGlobalVariables();
     initializeWiFi();
+}
+
 
     // Inicjalizacja PID
     PID pid(1.0, 0.1, 0.01);
@@ -2886,7 +2763,6 @@ void setup() {
     float output = pid.compute(setpoint, measuredValue);
     analogWrite(mosfetPin, constrain(output, 0, 255));
 }
-
 
 void initializePins() {
     int pins[] = {muxSelectPinA, muxSelectPinB, muxSelectPinC, muxSelectPinD, mosfetPin, bjtPin1, bjtPin2, bjtPin3, excitationBJT1Pin, excitationBJT2Pin, newPin1, newPin2, newPin3, bjtPin4};
@@ -2904,7 +2780,6 @@ void initializeOptimizer() {
     optimizer.initialize(3, bounds, 50, 10);
 }
 
-
 void displayWelcomeMessage() {
     char buffer[64];
     strcpy_P(buffer, welcomeMessage);
@@ -2921,7 +2796,6 @@ void initializeGlobalVariables() {
     currentVoltage = 0.0;
     currentCurrent = 0.0;
 }
-
 
 void initializeWiFi() {
     WiFi.begin("admin", "admin");
@@ -3023,8 +2897,6 @@ void executeActionAgent(int agentId, float action) {
     }
 }
 
-
-
 void initializeComponents() {
     // Inicjalizacja innych komponentów
     // Dodaj tutaj kod inicjalizujący inne komponenty
@@ -3055,8 +2927,6 @@ void initializePIDParams() {
     previousError = 0;
     integral = 0;
 }
-
-
 
 void initializeServerRoutes() {
     server.on("/", []() {
@@ -3142,7 +3012,6 @@ void readSensors() {
     }
 }
 
-
 // Funkcja sprawdzania alarmów
 void checkAlarm() {
     if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
@@ -3184,6 +3053,7 @@ void autoCalibrate() {
 
     Serial.println("Kalibracja zakończona.");
 }
+
 
 // Funkcja zarządzania energią
 void energyManagement() {
@@ -3368,6 +3238,7 @@ void updateDisplay() {
     display.display();
 }
 
+
 void loop() {
     unsigned long currentMillis = millis();
 
@@ -3449,22 +3320,17 @@ void loop() {
         // Wywołanie funkcji do wyświetlenia wyników optymalizacji
         printOptimizationResults();
     }
+
+    // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
+    float currentInputPower = readInputPower();
+    adjustMinInputPower(currentInputPower);
 }
+
 
     // Symulacja systemu
     float efficiency = simulateSystem(Kp, Ki, Kd);
     Serial.println("Symulowana wydajność: " + String(efficiency));
     delay(1000);
-}
-
-// Implementacja funkcji simulateSystem
-float simulateSystem(float Kp, float Ki, float Kd) {
-    // Przykładowa implementacja funkcji symulującej system
-    float controlSignal = simulateVoltageControl(Kp, Ki, Kd);
-    float efficiency = controlSignal / VOLTAGE_SETPOINT; // Przykładowa metryka wydajności
-    return efficiency;
-}
-
 
     // Przykładowe aktualizacje potrzeb agentów
     executeActionAgent(1, 0.5); // Agent 1
@@ -3490,8 +3356,6 @@ float simulateSystem(float Kp, float Ki, float Kd) {
 
     // Przydzielanie zasobów agentom
     allocateResources();
-}
-
 
     // Przykładowa logika sterowania
     if (currentCurrent > LOAD_THRESHOLD) {
@@ -3572,6 +3436,7 @@ void generateAndImplementFix(String error) {
     }
 }
 
+
 void resetVoltageController() {
     Serial.println("Resetting voltage controller...");
     // Kod resetowania kontrolera
@@ -3587,24 +3452,7 @@ void calibrateBrakingEffect() {
     // Kod kalibracji efektu hamowania
 }
 
-
-   
-
-    // Testowanie różnych wartości epsilon, learningRate i discountFactor
-    static const float testEpsilon = 0.3;
-    static const float testLearningRate = 0.01;
-    static const float testDiscountFactor = 0.95;
-
-    // Przypisz testowe wartości do używanych zmiennych raz na starcie
-    static bool initialized = false;
-    if (!initialized) {
-        epsilon = testEpsilon;
-        learningRate = testLearningRate;
-        discountFactor = testDiscountFactor;
-        initialized = true;
-    }
-
-   void logError(String error) {
+void logError(String error) {
     int addr = 0;
     while (addr < 512) {
         if (EEPROM.read(addr) == 0) {
@@ -3732,34 +3580,35 @@ void loop() {
 
     // Przykładowe wywołanie funkcji hillClimbing
     hillClimbing();
-    
-    // Dodanie opóźnienia, aby nie przeciążać procesora
-    delay(1000); // Opóźnienie 1 sekundy
-
-    // Przykładowe wywołanie funkcji simulateVoltageControl
-    float Kp = 1.0, Ki = 0.5, Kd = 0.1;
-    float voltageError = simulateVoltageControl(Kp, Ki, Kd);
-    Serial.println(voltageError);
-
-    // Dodanie opóźnienia, aby nie przeciążać procesora
-    delay(1000); // Opóźnienie 1 sekundy
-
-    // Przykładowe wywołanie funkcji simulateExcitationControl
-    float excitationError = simulateExcitationControl();
-    Serial.println(excitationError);
-
-    // Dodanie opóźnienia, aby nie przeciążać procesora
-    delay(1000); // Opóźnienie 1 sekundy
-
-    // Przykładowe wywołanie funkcji someFunctionOfOtherParameters
-    float rotationalSpeed = 3000.0;
-    float torque = 50.0;
-    float frictionCoefficient = 0.8;
-    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-    Serial.println(brakingEffect);
 }
 
-    // Sprawdzenie, czy są dostępne dane do odczytu
+    
+  // Dodanie opóźnienia, aby nie przeciążać procesora
+delay(1000); // Opóźnienie 1 sekundy
+
+// Przykładowe wywołanie funkcji simulateVoltageControl
+float Kp = 1.0, Ki = 0.5, Kd = 0.1;
+float voltageError = simulateVoltageControl(Kp, Ki, Kd);
+Serial.println(voltageError);
+
+// Dodanie opóźnienia, aby nie przeciążać procesora
+delay(1000); // Opóźnienie 1 sekundy
+
+// Przykładowe wywołanie funkcji simulateExcitationControl
+float excitationError = simulateExcitationControl();
+Serial.println(excitationError);
+
+// Dodanie opóźnienia, aby nie przeciążać procesora
+delay(1000); // Opóźnienie 1 sekundy
+
+// Przykładowe wywołanie funkcji someFunctionOfOtherParameters
+float rotationalSpeed = 3000.0;
+float torque = 50.0;
+float frictionCoefficient = 0.8;
+float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
+Serial.println(brakingEffect);
+
+// Sprawdzenie, czy są dostępne dane do odczytu
 if (mySerial.available()) {
     String command = mySerial.readStringUntil('\n');
     if (command == "START_COMPUTE") {
@@ -3901,6 +3750,7 @@ if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
     }
 }
 
+
 // Aktualizacja agentów
 if (currentTime - lastUpdateAgent1 >= updateInterval) {
     float error = VOLTAGE_SETPOINT - currentVoltage;
@@ -3995,9 +3845,6 @@ handleSerialCommands();
 // Trening agenta 1
 trainAgent1();
 
-// Aktualizacja agenta 3
-qLearningAgent3();
-
 // Funkcja monitorująca tranzystory
 void monitorTransistors() {
     const int tranzystorPins[3] = {bjtPin1, bjtPin2, bjtPin3};
@@ -4018,10 +3865,7 @@ void monitorTransistors() {
 // Globalna zmienna dla minimalnej mocy wejściowej
 float minInputPower = 1e-7; // Początkowa wartość, dostosowana w funkcji
 
-// Funkcja do automatycznego dostosowywania progu (umieszczona poza pętlą loop)
-void adjustMinInputPower(float inputPower) {
-    static float minObservedPower = 1e-6;
-    static float maxObservedPower = 1e-3;
+
 
     // Aktualizuj minimalną i maksymalną obserwowaną moc
     if (inputPower > 0 && inputPower < minObservedPower) {
