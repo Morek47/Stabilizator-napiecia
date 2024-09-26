@@ -90,11 +90,14 @@ bool stopCompute = false;
 HardwareSerial mySerial(1);
 float evaluateThreshold = 0.1;
 
+
+
+
 // Zmienna globalna do przechowywania poprzedniej wartości sygnału
 float previousFilteredValue = 0.0; // Inicjalizacja na 0.0
 
 // Deklaracja semaforów
-SemaphoreHandle_t xSemaphore;
+SemaphoreHandle_t resourceSemaphore;
 
 // Prototypy funkcji
 float simulateVoltageControl(float Kp, float Ki, float Kd);
@@ -143,18 +146,121 @@ void trainModel();
 String predictWithModel(float voltage, float current, float brakingEffect);
 
 
+/ Struktura do przechowywania informacji o agentach
+struct Agent {
+    int id;
+    int priority; // Wyższy priorytet oznacza większą potrzebę
+    int waitCount; // Licznik prób uzyskania dostępu
+    unsigned long waitTime; // Czas oczekiwania na dostęp
+    unsigned long lastAccessTime; // Czas ostatniego dostępu
+};
+
+// Lista agentów
+Agent agents[] = {
+    {1, 0, 0, 0, 0}, // Agent 1
+    {2, 0, 0, 0, 0}, // Agent 2
+    {3, 0, 0, 0, 0}  // Agent 3
+};
+
+const unsigned long timeSlice = 1000; // Czas przydzielony każdemu agentowi w ms
+const unsigned long maxWaitTime = 5000; // Maksymalny czas oczekiwania w ms
+
+// Deklaracja semaforów
+SemaphoreHandle_t resourceSemaphore;
+
+// Funkcja zmniejszająca priorytet agenta po udanej operacji
+void decreasePriority(Agent &agent) {
+    if (agent.priority > 0) {
+        agent.priority--;
+    }
+}
+
+// Funkcja zwiększająca priorytet agenta, który długo czeka na zasób
+void increasePriority(Agent &agent) {
+    if (millis() - agent.lastAccessTime > maxWaitTime) {
+        agent.priority++;
+    }
+}
+
+// Funkcja przydzielająca zasoby agentom z najwyższym priorytetem
+void allocateResources() {
+    std::priority_queue<std::pair<int, int>> pq; // Kolejka priorytetowa (priorytet, id agenta)
+    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
+        pq.push({agents[i].priority, agents[i].id});
+    }
+
+    while (!pq.empty()) {
+        int agentId = pq.top().second;
+        pq.pop();
+
+        if (xSemaphoreTake(resourceSemaphore, portMAX_DELAY) == pdTRUE) {
+            // Wykonaj operację dla agenta o najwyższym priorytecie
+            // Przykładowa operacja: odczyt napięcia
+            float voltage = readVoltage();
+            Serial.println("Agent " + String(agentId) + ": Odczytane napięcie: " + String(voltage));
+
+            // Zmniejszenie priorytetu po udanej operacji
+            decreasePriority(agents[agentId - 1]);
+
+            xSemaphoreGive(resourceSemaphore);
+        }
+    }
+}
+
+// Przykładowa funkcja odczytu napięcia
+float readVoltage() {
+    return analogRead(A0) * (5.0 / 1023.0);
+}
+
+// Implementacja funkcji simulateVoltageControl
+float simulateVoltageControl(float Kp, float Ki, float Kd) {
+    float setpoint = 230.0; // Docelowe napięcie w woltach
+    float measuredValue = readVoltage();
+    float error = setpoint - measuredValue;
+    float controlSignal = Kp * error + Ki * (error * 50) + Kd * (error / 50);
+    return controlSignal;
+}
+
+// Implementacja funkcji simulateExcitationControl
+float simulateExcitationControl() {
+    float excitationCurrent = analogRead(A1) * (5.0 / 1023.0);
+    return excitationCurrent;
+}
+
+// Implementacja funkcji simulateBrakingEffect
+float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionCoefficient) {
+    return (rotationalSpeed * torque) / (frictionCoefficient * 10.0);
+}
+
+// Implementacja funkcji calibrateVoltage
+float calibrateVoltage(float rawVoltage) {
+    return rawVoltage * (5.0 / 1023.0);
+}
+
+// Implementacja funkcji calibrateCurrent
+float calibrateCurrent(float rawCurrent) {
+    return rawCurrent * (5.0 / 1023.0);
+}
+
+// Implementacja funkcji lowPassFilter
+float lowPassFilter(float currentValue, float previousValue, float alpha) {
+    return alpha * currentValue + (1 - alpha) * previousValue;
+}
 
 // Funkcja agenta 1
 void agent1Function(void *pvParameters) {
     for (;;) {
-        if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
+        if (xSemaphoreTake(resourceSemaphore, portMAX_DELAY) == pdTRUE) {
             float voltage = readVoltage();
             Serial.println("Agent 1: Odczytane napięcie: " + String(voltage));
 
             // Ustawienie PWM dla agenta 1
             analogWrite(mosfetPin, map(voltage, 0, 5, 0, 255));
 
-            xSemaphoreGive(xSemaphore);
+            // Zmniejszenie priorytetu po udanej operacji
+            decreasePriority(agents[0]);
+
+            xSemaphoreGive(resourceSemaphore);
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
@@ -163,14 +269,17 @@ void agent1Function(void *pvParameters) {
 // Funkcja agenta 2
 void agent2Function(void *pvParameters) {
     for (;;) {
-        if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
+        if (xSemaphoreTake(resourceSemaphore, portMAX_DELAY) == pdTRUE) {
             float current = readExcitationCurrent();
             Serial.println("Agent 2: Odczytany prąd wzbudzenia: " + String(current));
 
             // Ustawienie PWM dla agenta 2
             analogWrite(excitationBJT1Pin, map(current, 0, 5, 0, 255));
 
-            xSemaphoreGive(xSemaphore);
+            // Zmniejszenie priorytetu po udanej operacji
+            decreasePriority(agents[1]);
+
+            xSemaphoreGive(resourceSemaphore);
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
@@ -179,14 +288,17 @@ void agent2Function(void *pvParameters) {
 // Funkcja agenta 3
 void agent3Function(void *pvParameters) {
     for (;;) {
-        if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
+        if (xSemaphoreTake(resourceSemaphore, portMAX_DELAY) == pdTRUE) {
             float brakingEffect = readBrakingEffect();
             Serial.println("Agent 3: Odczytany efekt hamowania: " + String(brakingEffect));
 
             // Ustawienie PWM dla agenta 3
             analogWrite(bjtPin1, map(brakingEffect, 0, 5, 0, 255));
 
-            xSemaphoreGive(xSemaphore);
+            // Zmniejszenie priorytetu po udanej operacji
+            decreasePriority(agents[2]);
+
+            xSemaphoreGive(resourceSemaphore);
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
@@ -2491,7 +2603,7 @@ void autoCalibrateSystem() {
 // Inicjalizacja funkcji setup
 void setup() {
     // Inicjalizacja komunikacji szeregowej
-    Serial.begin(9600);
+    Serial.begin(115200);
     while (!Serial) {
         ; // Czekaj na otwarcie portu szeregowego
     }
@@ -2527,22 +2639,15 @@ void setup() {
     delay(2000);
     display.clearDisplay();
 
-    // Inicjalizacja semafora
-    xSemaphore = xSemaphoreCreateMutex();
-    if (xSemaphore == NULL) {
-        Serial.println("Nie udało się utworzyć semafora");
-        while (1); // Zatrzymaj program, jeśli nie udało się utworzyć semafora
-    }
-
     // Inicjalizacja tablicy Q
     initializeQTable();
 
     // Tworzenie zadań dla agentów
-    if (xSemaphore != NULL) {
-        xTaskCreate(agent1Function, "Agent 1", 2048, NULL, 1, NULL);
-        xTaskCreate(agent2Function, "Agent 2", 2048, NULL, 1, NULL);
-        xTaskCreate(agent3Function, "Agent 3", 2048, NULL, 1, NULL);
-    }
+    xTaskCreate(agent1Function, "Agent 1", 2048, NULL, 1, NULL);
+    xTaskCreate(agent2Function, "Agent 2", 2048, NULL, 1, NULL);
+    xTaskCreate(agent3Function, "Agent 3", 2048, NULL, 1, NULL);
+}
+
 
     // Inicjalizacja komponentów
     initializePins();
@@ -2610,6 +2715,90 @@ void initializeWiFi() {
         Serial.println(WiFi.localIP());
     } else {
         Serial.println("Nie udało się połączyć z WiFi");
+    }
+}
+
+// Funkcja aktualizująca priorytet agenta
+void updateAgentPriority(int agentId) {
+    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
+        if (agents[i].id == agentId) {
+            agents[i].waitCount++; // Zwiększ licznik prób uzyskania dostępu
+            agents[i].waitTime = millis(); // Ustaw czas oczekiwania
+            // Ustal priorytet na podstawie liczby prób i czasu oczekiwania
+            agents[i].priority = agents[i].waitCount + (millis() - agents[i].waitTime) / 1000; 
+            agents[i].priority = constrain(agents[i].priority, 0, 10); // Ogranicz maksymalny priorytet
+            break;
+        }
+    }
+}
+
+// Funkcja zwracająca agenta o najwyższym priorytecie
+int getHighestPriorityAgent() {
+    int highestPriority = -1;
+    int index = -1;
+    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
+        if (agents[i].priority > highestPriority) {
+            highestPriority = agents[i].priority;
+            index = i;
+        }
+    }
+    return index; // Zwraca indeks agenta o najwyższym priorytecie
+}
+
+// Funkcja ustawiająca PWM
+bool setPWM(int pin, float action, int agentId) {
+    int agentIndex = getHighestPriorityAgent();
+    
+    // Sprawdź, czy agent o najwyższym priorytecie to ten, który prosi o dostęp
+    if (agentIndex != -1 && agents[agentIndex].id == agentId) {
+        if (xSemaphoreTake(resourceSemaphore, pdMS_TO_TICKS(100)) == pdTRUE) {
+            unsigned long currentTime = millis();
+            if (currentTime - agents[agentIndex].lastAccessTime < timeSlice) {
+                int pwmValue = (int)(action * 255.0);
+                pwmValue = constrain(pwmValue, 0, 255);
+                analogWrite(pin, pwmValue);
+                agents[agentIndex].lastAccessTime = currentTime; // Ustaw czas ostatniego dostępu
+                xSemaphoreGive(resourceSemaphore); // Zwolnienie semafora
+                
+                // Resetowanie priorytetu agenta po udanym dostępie
+                agents[agentIndex].waitCount = 0; // Resetuj licznik prób
+                agents[agentIndex].priority = 0;   // Resetuj priorytet
+                return true; // Sukces
+            } else {
+                // Jeśli czas przydzielony minął, resetuj dostęp
+                xSemaphoreGive(resourceSemaphore); 
+                return false; // Niepowodzenie, czas przydzielony minął
+            }
+        } else {
+            Serial.println("Timeout while waiting for semaphore.");
+            updateAgentPriority(agentId); // Aktualizacja priorytetu, jeśli czas oczekiwania
+            return false; // Niepowodzenie
+        }
+    }
+    return false; // Agent nie ma dostępu
+}
+
+// Funkcja wykonująca akcję agenta
+void executeActionAgent(int agentId, float action) {
+    switch (agentId) {
+        case 1:
+            if (!setPWM(9, action, agentId)) { // Pin dla Agenta 1
+                Serial.println("Agent 1 failed to set PWM.");
+            }
+            break;
+        case 2:
+            if (!setPWM(10, action, agentId)) { // Pin dla Agenta 2
+                Serial.println("Agent 2 failed to set PWM.");
+            }
+            break;
+        case 3:
+            if (!setPWM(11, action, agentId)) { // Pin dla Agenta 3
+                Serial.println("Agent 3 failed to set PWM.");
+            }
+            break;
+        default:
+            Serial.println("Invalid agent ID.");
+            break;
     }
 }
 
@@ -2989,8 +3178,6 @@ void loop() {
 
     // Kontrola tranzystorów
     controlTransistors(currentVoltage, currentCurrent);
-}
-
 
     // Obsługa komunikacji szeregowej
     if (currentMillis - previousMillisSerial >= intervalSerial) {
@@ -3052,12 +3239,32 @@ void loop() {
         Serial.print("Wydajność: "); Serial.println(bestEfficiency);
     }
 
+    // Przykładowe aktualizacje potrzeb agentów
+    executeActionAgent(1, 0.5); // Agent 1
+    delay(300); // Krótkie opóźnienie
+
+    executeActionAgent(2, 0.75); // Agent 2
+    delay(300); // Krótkie opóźnienie
+
+    executeActionAgent(3, 1.0); // Agent 3
+    delay(300); // Krótkie opóźnienie
+
     // Wysyłanie danych do komputera
     if (Serial) {
         float dataToSend = analogRead(A0); // Przykładowe dane do wysłania
         Serial.println(dataToSend); // Wysyłanie danych do komputera
         delay(1000); // Opóźnienie dla przykładu
     }
+
+    // Aktualizacja priorytetów agentów
+    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
+        increasePriority(agents[i]);
+    }
+
+    // Przydzielanie zasobów agentom
+    allocateResources();
+}
+
 
     // Przykładowa logika sterowania
     if (currentCurrent > LOAD_THRESHOLD) {
