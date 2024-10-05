@@ -8,6 +8,8 @@
 #include <BayesOptimizer.h>
 #include <map>
 #include <queue>
+#include <cfloat>
+#include <FreeRTOS.h>
 
 // Definicje stałych i zmiennych
 #define MAX_CURRENT 25
@@ -70,6 +72,15 @@ float bestParams[3] = {0.0, 0.0, 0.0};
 float bestObjective = FLT_MAX;
 float learningRate = 0.1;
 float discountFactor = 0.9;
+float Kp, Ki, Kd;
+float voltageError;
+float excitationError;
+float brakingEffect;
+unsigned long currentMillis, previousMillis;
+unsigned long interval;
+float voltage, current;
+float error;
+
 unsigned long previousMillisDisplay = 0;
 unsigned long previousMillisSerial = 0;
 const long intervalDisplay = 1000;
@@ -2531,7 +2542,7 @@ void advancedLogData() {
     Serial.println(lastAction);
 }
 
-void detectComputerConnection() {
+void checkComputerConnection() {
     static bool isConnected = false;
     if (Serial) {
         if (!isConnected) {
@@ -2620,6 +2631,25 @@ void setTargetVoltageForAllAgents(float averageTargetVoltage) {
     }
 }
 
+// Globalne zmienne dla minimalnej i maksymalnej mocy wejściowej
+float minInputPower = 1e-7; // Początkowa wartość, dostosowana w funkcji
+float minObservedPower = 1e-6;
+float maxObservedPower = 1e-3;
+
+// Aktualizuj minimalną i maksymalną obserwowaną moc
+void updateObservedPower(float inputPower) {
+    if (inputPower > 0 && inputPower < minObservedPower) {
+        minObservedPower = inputPower;
+    }
+
+    if (inputPower > maxObservedPower) {
+        maxObservedPower = inputPower;
+    }
+
+    // Dostosuj próg na podstawie obserwowanych wartości
+    minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
+}
+
 // Inicjalizacja funkcji setup
 void setup() {
     // Inicjalizacja komunikacji szeregowej
@@ -2677,6 +2707,8 @@ void setup() {
 
     // Inicjalizacja komponentów
     initializeComponents();
+
+    Serial.println(F("Setup complete"));
 }
 
 // Inicjalizacja semaforów
@@ -2743,6 +2775,7 @@ void initializePID() {
     float output = pid.compute(setpoint, measuredValue);
     analogWrite(mosfetPin, constrain(output, 0, 255));
 }
+
 
 
 // Inicjalizacja optymalizatora
@@ -3265,8 +3298,8 @@ void loop() {
     handlePIDOptimization();
 
     // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
-    float currentInputPower = readInputPower();
-    adjustMinInputPower(currentInputPower);
+    float inputPower = readInputPower(); // Odczytaj moc wejściową
+    updateObservedPower(inputPower); // Aktualizuj obserwowaną moc
 
     // Dodanie nowej pętli z warunkiem wyjścia
     handleLoopWithExitCondition();
@@ -3293,6 +3326,74 @@ void loop() {
     monitorErrors();
     detectAnomalies();
     delay(1000); // Sprawdzaj błędy co 1 sekundę
+
+    // Przypisz testowe wartości do używanych zmiennych raz na starcie
+    static bool initialized = false;
+    if (!initialized) {
+        epsilon = testEpsilon;
+        learningRate = testLearningRate;
+        discountFactor = testDiscountFactor;
+        initialized = true;
+    }
+}
+
+
+    // Wywołania funkcji Q-learning dla agentów
+    qLearning(1, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
+    qLearning(2, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
+    qLearning(3, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
+
+    // Przykładowe wywołanie funkcji simulateVoltageControl
+    float Kp = 1.0, Ki = 0.5, Kd = 0.1;
+    float voltageError = simulateVoltageControl(Kp, Ki, Kd);
+    Serial.println(voltageError);
+
+    // Przykładowe wywołanie funkcji simulateExcitationControl
+    float excitationError = simulateExcitationControl();
+    Serial.println(excitationError);
+
+    // Przykładowe wywołanie funkcji someFunctionOfOtherParameters
+    float rotationalSpeed = 3000.0;
+    float torque = 50.0;
+    float frictionCoefficient = 0.8;
+    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
+    Serial.println(brakingEffect);
+
+    // Sprawdzenie, czy są dostępne dane do odczytu
+    if (mySerial.available()) {
+        String command = mySerial.readStringUntil('\n');
+        if (command == "START_COMPUTE") {
+            Serial.println("Rozpoczęcie obliczeń");
+            stopCompute = false; // Reset flagi przed rozpoczęciem obliczeń
+
+            while (true) {
+                // Wysłanie danych do komputera
+                mySerial.println("DANE_DO_PRZETWORZENIA");
+
+                // Oczekiwanie na potwierdzenie
+                while (!mySerial.available()) {
+                    // Czekanie na potwierdzenie
+                    if (stopCompute) {
+                        break;
+                    }
+                }
+
+                if (stopCompute) {
+                    break;
+                }
+
+                String ack = mySerial.readStringUntil('\n');
+                if (ack == "ACK") {
+                    Serial.println("Potwierdzenie odebrane");
+                }
+
+                // Warunek wyjścia z pętli
+                if (stopCompute) {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 // Funkcja do trenowania agentów
@@ -3613,88 +3714,6 @@ void delayWithMessage(unsigned long delayTime, const String &message) {
     delay(delayTime);
 }
 
-// Inne operacje w pętli głównej
-void loop() {
-    handleSerialCommands();
-    detectComputerConnection();
-    trainAgent1();
-    trainAgent2();
-    communicateBetweenAgents();
-    controlTransistors(currentVoltage, currentCurrent);
-
-    // Przypisz testowe wartości do używanych zmiennych raz na starcie
-    static bool initialized = false;
-    if (!initialized) {
-        epsilon = testEpsilon;
-        learningRate = testLearningRate;
-        discountFactor = testDiscountFactor;
-        initialized = true;
-    }
-
-    // Przykładowe wywołanie funkcji hillClimbing
-    hillClimbing();
-
-    // Dodanie opóźnienia, aby nie przeciążać procesora
-    delayWithMessage(1000, "Opóźnienie 1 sekundy");
-
-    // Przykładowe wywołanie funkcji simulateVoltageControl
-    float Kp = 1.0, Ki = 0.5, Kd = 0.1;
-    float voltageError = simulateVoltageControl(Kp, Ki, Kd);
-    Serial.println(voltageError);
-
-    // Dodanie opóźnienia, aby nie przeciążać procesora
-    delayWithMessage(1000, "Opóźnienie 1 sekundy");
-
-    // Przykładowe wywołanie funkcji simulateExcitationControl
-    float excitationError = simulateExcitationControl();
-    Serial.println(excitationError);
-
-    // Dodanie opóźnienia, aby nie przeciążać procesora
-    delayWithMessage(1000, "Opóźnienie 1 sekundy");
-
-    // Przykładowe wywołanie funkcji someFunctionOfOtherParameters
-    float rotationalSpeed = 3000.0;
-    float torque = 50.0;
-    float frictionCoefficient = 0.8;
-    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-    Serial.println(brakingEffect);
-
-    // Sprawdzenie, czy są dostępne dane do odczytu
-    if (mySerial.available()) {
-        String command = mySerial.readStringUntil('\n');
-        if (command == "START_COMPUTE") {
-            Serial.println("Rozpoczęcie obliczeń");
-            stopCompute = false; // Reset flagi przed rozpoczęciem obliczeń
-
-            while (true) {
-                // Wysłanie danych do komputera
-                mySerial.println("DANE_DO_PRZETWORZENIA");
-
-                // Oczekiwanie na potwierdzenie
-                while (!mySerial.available()) {
-                    // Czekanie na potwierdzenie
-                    if (stopCompute) {
-                        break;
-                    }
-                }
-
-                if (stopCompute) {
-                    break;
-                }
-
-                String ack = mySerial.readStringUntil('\n');
-                if (ack == "ACK") {
-                    Serial.println("Potwierdzenie odebrane");
-                }
-
-                // Warunek wyjścia z pętli
-                if (stopCompute) {
-                    break;
-                }
-            }
-        }
-    }
-
     // Przykładowe użycie funkcji zapisu i odczytu EEPROM
     exampleUsage();
     delayWithMessage(1000, "Opóźnienie dla celów demonstracyjnych");
@@ -3875,13 +3894,23 @@ void qLearning(int agent, float voltage, float current, float efficiency, float 
     }
 }
 
-qLearning(1, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-qLearning(2, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-qLearning(3, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
 
-// Dostosuj minimalny próg mocy wejściowej - dodane tutaj
-float inputPower = voltageIn[0] * currentIn[0];
-adjustMinInputPower(inputPower);
+// Implementacja funkcji centralController
+void centralController() {
+    float averageTargetVoltage = 0.0;
+    int numAgents = sizeof(agents) / sizeof(agents[0]);
+
+    for (int i = 0; i < numAgents; i++) {
+        averageTargetVoltage += agents[i].targetVoltage;
+    }
+    averageTargetVoltage /= numAgents;
+
+    setTargetVoltageForAllAgents(averageTargetVoltage);
+
+    // Dostosuj minimalny próg mocy wejściowej - dodane tutaj
+    float inputPower = voltageIn[0] * currentIn[0];
+    adjustMinInputPower(inputPower);
+}
 
 // Obsługa serwera
 server.handleClient();
@@ -3909,24 +3938,7 @@ void monitorTransistors() {
     }
 }
 
-// Globalna zmienna dla minimalnej mocy wejściowej
-float minInputPower = 1e-7; // Początkowa wartość, dostosowana w funkcji
 
-// Aktualizuj minimalną i maksymalną obserwowaną moc
-void updateObservedPower(float inputPower) {
-    if (inputPower > 0 && inputPower < minObservedPower) {
-        minObservedPower = inputPower;
-    }
-
-    if (inputPower > maxObservedPower) {
-        maxObservedPower = inputPower;
-    }
-
-    // Dostosuj próg na podstawie obserwowanych wartości
-    minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
-}
-
-updateObservedPower(inputPower);
 
 void detectComputerConnection() {
     if (Serial.available()) {
