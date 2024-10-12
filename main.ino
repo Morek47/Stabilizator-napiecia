@@ -1,19 +1,23 @@
+#include <eigen.h>
+#include <Arduino.h>
+#include <Wire.h>
+#include <EEPROM.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH1106.h>
-#include <Arduino.h>
-#include <Eigen/Dense> 
-#include <bayesopt/bayesopt.hpp> 
-#include <cfloat>
-#include <EEPROM.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266WiFi.h>
+#include <Eigen/Dense>
+#include <bayesopt/bayesopt.hpp>
 #include <FreeRTOS.h>
-#include <semphr.h>
 #include <task.h>
-#include <Wire.h>
-#include <cstring> 
+#include <semphr.h>
+#include <vector>
+#include <cstring>
 #include <queue>
-#include <map> 
+#include <map>
+#include <cfloat>
+#include <avr/io.h>
+
 
 // Definicje stałych i zmiennych
 #define MAX_CURRENT 25
@@ -36,6 +40,7 @@
 #define NUM_STATE_BINS_AGENT2 10
 #define NUM_ACTIONS_AGENT1 5
 #define NUM_ACTIONS_AGENT2 5
+
 
 const float VOLTAGE_REFERENCE = 5.0;
 const int ADC_MAX_VALUE = 1023;
@@ -89,10 +94,7 @@ unsigned long previousMillisSerial = 0;
 const long intervalDisplay = 1000;
 const long intervalSerial = 500;
 
-struct Agent {
-    int id;
-    int priority;
-};
+
 
 // Definicja klasy SemaphoreGuard
 class SemaphoreGuard {
@@ -112,15 +114,63 @@ private:
 SemaphoreHandle_t resourceSemaphore;
 SemaphoreHandle_t eepromSemaphore;
 
+// Definicje funkcji pomocniczych
+float readInputPower() {
+    // Przykładowa implementacja odczytu mocy wejściowej
+    float voltage = analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Odczyt napięcia z pinu A0
+    float current = analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Odczyt prądu z pinu A1
+    return voltage * current; // Moc = napięcie * prąd
+}
+
+void updateObservedPower(float power) {
+    // Przykładowa implementacja aktualizacji obserwowanej mocy
+    Serial.print("Obserwowana moc: ");
+    Serial.println(power);
+}
+void checkAlarm() {
+    // Przykładowa implementacja funkcji checkAlarm
+    Serial.println("Sprawdzanie alarmu...");
+    // Dodaj logikę sprawdzania alarmu tutaj
+}
+
+void autoCalibrate() {
+    // Przykładowa implementacja funkcji autoCalibrate
+    Serial.println("Automatyczna kalibracja...");
+    // Dodaj logikę automatycznej kalibracji tutaj
+}
+
+void energyManagement() {
+    // Przykładowa implementacja funkcji energyManagement
+    Serial.println("Zarządzanie energią...");
+    // Dodaj logikę zarządzania energią tutaj
+}
+
 void someFunction() {
     SemaphoreGuard guard(resourceSemaphore);
     // Kod funkcji
     Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
 
-    // Definicja tablicy params
-    float params[3] = { 1.0, 0.1, 0.01 };
+    // Definicja wektora params
+    std::vector<float> params = { 1.0, 0.1, 0.01 };
+    updateControlParameters(params); // Poprawne wywołanie
+
+    // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
+    float inputPower = readInputPower(); // Odczytaj moc wejściową
+    updateObservedPower(inputPower); // Aktualizuj obserwowaną moc
+}
+
+void updateControlParameters(const std::vector<float>& params);
+
+void someFunction() {
+    SemaphoreGuard guard(resourceSemaphore);
+    // Kod funkcji
+    Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
+
+    // Definicja wektora params
+    std::vector<float> params = { 1.0, 0.1, 0.01 };
     updateControlParameters(params); // Poprawne wywołanie
 }
+
 
 const int mosfetPin = D4;
 const int excitationBJT1Pin = D8;
@@ -128,6 +178,7 @@ const int excitationBJT2Pin = D9;
 const int bjtPin1 = D5;
 const int bjtPin2 = D6;
 const int bjtPin3 = D7; // Poprawienie brakującego przypisania pinu
+
 
 Adafruit_SH1106 display(OLED_RESET); // Dodanie instancji wyświetlacza
 
@@ -149,8 +200,6 @@ void someFunction() {
     float calculateError(float setpoint, float measuredValue);
     void updateControlParameters(float params[3]);
     void handleSerialCommunication();
-    void updateDisplay();
-    void monitorErrors();
     void generateAndImplementFix(String error);
     void checkVoltage();
     void checkCurrent();
@@ -172,41 +221,166 @@ void someFunction() {
 }
 
 void detectAnomalies() {
-    // Implementacja funkcji
+    // Odczytanie aktualnych wartości
+    float currentVoltage = readVoltage();
+    float currentCurrent = readExcitationCurrent();
+    float currentBrakingEffect = readBrakingEffect();
+
+    // Progi wykrywania anomalii
+    const float voltageThreshold = 240.0; // Przykładowy próg napięcia
+    const float currentThreshold = 30.0;  // Przykładowy próg prądu
+    const float brakingEffectThreshold = 110.0; // Przykładowy próg efektu hamowania
+
+    // Wykrywanie anomalii
+    if (currentVoltage > voltageThreshold) {
+        handleAnomaly("Voltage anomaly detected");
+    }
+    if (currentCurrent > currentThreshold) {
+        handleAnomaly("Current anomaly detected");
+    }
+    if (currentBrakingEffect > brakingEffectThreshold) {
+        handleAnomaly("Braking effect anomaly detected");
+    }
+}
+
+// Przykładowe implementacje funkcji pomocniczych
+float readVoltage() {
+    // Implementacja odczytu napięcia
+    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+float readExcitationCurrent() {
+    // Implementacja odczytu prądu
+    return analogRead(0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+}
+
+float readBrakingEffect() {
+    // Implementacja odczytu efektu hamowania
+    return analogRead(0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 }
 
 void handleAnomaly(String anomaly) {
-    // Implementacja funkcji
+    // Implementacja obsługi anomalii
+    Serial.println(anomaly);
+    // Dodatkowe działania, np. logowanie, powiadomienia, itp.
 }
+
+
+#define NUM_STATE_BINS_AGENT3 100 // Dodanie brakującej definicji
 
 String predictError(float voltage, float current, float brakingEffect) {
     // Implementacja funkcji
-    return "";
+    if (voltage > 240.0) {
+        return "Voltage anomaly detected";
+    }
+    else if (current > 30.0) {
+        return "Current anomaly detected";
+    }
+    else if (brakingEffect > 110.0) {
+        return "Braking effect anomaly detected";
+    }
+    return "No anomaly detected";
 }
 
 void addFixFunction(String error, void(*fixFunction)()) {
     // Implementacja funkcji
+    // Przykładowa mapa przechowująca funkcje naprawcze
+    static std::map<String, void(*)()> fixFunctionMap;
+    fixFunctionMap[error] = fixFunction;
 }
 
 void defaultFixFunction() {
     // Implementacja funkcji
+    Serial.println("Default fix function executed.");
 }
 
 void trainModel() {
     // Implementacja funkcji
+    Serial.println("Training model...");
+    // Przykładowa implementacja treningu modelu
+    // Można tu dodać kod do trenowania modelu, np. aktualizacja tablicy Q
 }
 
 String predictWithModel(float voltage, float current, float brakingEffect) {
     // Implementacja funkcji
-    return "";
+    // Przykładowa predykcja na podstawie modelu
+    if (voltage > 240.0) {
+        return "Voltage anomaly predicted";
+    }
+    else if (current > 30.0) {
+        return "Current anomaly predicted";
+    }
+    else if (brakingEffect > 110.0) {
+        return "Braking effect anomaly predicted";
+    }
+    return "No anomaly predicted";
 }
 
+
 void discretizeStateAgent2(float state, int& discreteState) {
-    // Implementacja funkcji
+    // Normalizacja stanu do zakresu [0, 1]
+    float normalizedState = (state - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+    
+    // Dyskretyzacja stanu
+    discreteState = static_cast<int>(normalizedState * (NUM_STATE_BINS_AGENT2 - 1));
+    
+    // Upewnienie się, że dyskretyzowany stan jest w zakresie
+    if (discreteState < 0) {
+        discreteState = 0;
+    } else if (discreteState >= NUM_STATE_BINS_AGENT2) {
+        discreteState = NUM_STATE_BINS_AGENT2 - 1;
+    }
 }
 
 void discretizeStateAgent3(float state[], int discreteState[]) {
-    // Implementacja funkcji
+    // Normalizacja i dyskretyzacja stanu dla agenta 3
+    for (int i = 0; i < 2; ++i) {
+        float normalizedState = (state[i] - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+        discreteState[i] = static_cast<int>(normalizedState * (NUM_STATE_BINS_AGENT3 - 1));
+        
+        // Upewnienie się, że dyskretyzowany stan jest w zakresie
+        if (discreteState[i] < 0) {
+            discreteState[i] = 0;
+        } else if (discreteState[i] >= NUM_STATE_BINS_AGENT3) {
+            discreteState[i] = NUM_STATE_BINS_AGENT3 - 1;
+        }
+    }
+}
+
+
+struct Agent {
+    int id;
+    int priority;
+};
+
+void agentTask(void* pvParameters) {
+    Agent* agent = static_cast<Agent*>(pvParameters);
+    while (true) {
+        // Kod wykonywany przez agenta
+        Serial.print("Agent ID: ");
+        Serial.println(agent->id);
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Opóźnienie 1 sekundy
+    }
+}
+
+void createAgentTasks() {
+    // Przykładowa lista agentów
+    Agent agents[] = {
+        {1, 1},
+        {2, 2},
+        {3, 3}
+    };
+
+    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); ++i) {
+        xTaskCreate(
+            agentTask,                // Funkcja zadania
+            "AgentTask",              // Nazwa zadania
+            1024,                     // Stos zadania
+            &agents[i],               // Parametry zadania
+            agents[i].priority,       // Priorytet zadania
+            NULL                      // Uchwyt zadania
+        );
+    }
 }
 
 
@@ -244,6 +418,9 @@ void increasePriority(Agent& agent) {
     }
 }
 
+
+
+
 void performAgentOperation(int agentId) {
     // Znajdowanie agenta na podstawie jego ID
     Agent* agent = nullptr;
@@ -254,18 +431,20 @@ void performAgentOperation(int agentId) {
         }
     }
 
-    if (agent != nullptr) {
-        // Przykładowa operacja na agencie
-        agent->waitCount = 0;
-        agent->waitTime = 0;
-        agent->lastAccessTime = millis();
-        agent->targetVoltage = VOLTAGE_SETPOINT;
+    void performAgentOperation(int agentId) {
+        Agent* agent = &agents[agentId - 1]; // Pobranie wskaźnika do agenta
+        if (agent != nullptr) {
+            // Przykładowa operacja na agencie
+            agent->waitCount = 0;
+            agent->waitTime = 0;
+            agent->lastAccessTime = millis();
+            agent->targetVoltage = VOLTAGE_SETPOINT;
 
-        // Wyświetlanie informacji o alokacji zasobów
-        Serial.print("Allocating resources to agent ");
-        Serial.println(agent->id);
+            // Wyświetlanie informacji o alokacji zasobów
+            Serial.print("Allocating resources to agent ");
+            Serial.println(agent->id);
+        }
     }
-}
 
 void allocateResources() {
     std::priority_queue<std::pair<int, int>> pq;
@@ -357,7 +536,7 @@ float simulateVoltageControl(float Kp, float Ki, float Kd) {
 
 // Implementacja funkcji simulateExcitationControl
 float simulateExcitationControl() {
-    int rawValue = analogRead(A1);
+    int rawValue = analogRead(01);
 
     // Sprawdzenie, czy wartość mieści się w oczekiwanym zakresie
     if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
@@ -437,25 +616,28 @@ float lowPassFilter(float currentValue, float previousValue, float alpha) {
     return alpha * currentValue + (1 - alpha) * previousValue;
 }
 
-// Definicja klasy SemaphoreGuard
 class SemaphoreGuard {
 public:
-    SemaphoreGuard(SemaphoreHandle_t sem) : sem(sem) {
-        xSemaphoreTake(sem, portMAX_DELAY);
+    SemaphoreGuard(SemaphoreHandle_t& semaphore) : semaphore_(semaphore) {
+        xSemaphoreTake(semaphore_, portMAX_DELAY);
     }
+
     ~SemaphoreGuard() {
-        xSemaphoreGive(sem);
+        xSemaphoreGive(semaphore_);
     }
+
 private:
-    SemaphoreHandle_t sem;
+    SemaphoreHandle_t& semaphore_;
 };
 
-// Przykład użycia
 void someFunction() {
     SemaphoreGuard guard(resourceSemaphore);
     // Wykonaj operację
-    // Semafor zostanie automatycznie zwolniony po zakończeniu funkcji
-}
+    Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
+
+
+// Definicja tablicy agentów
+Agent agents[1] = { {0, 1} }; // Przykładowa inicjalizacja agenta
 
 // Funkcja agenta 1
 void agent1Function(void* pvParameters) {
@@ -475,7 +657,6 @@ void agent1Function(void* pvParameters) {
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
-
 void discretizeStateAgent2(float state, int& discreteState) {
     float binSize = MAX_CURRENT / NUM_STATE_BINS_AGENT2;
     discreteState = min(NUM_STATE_BINS_AGENT2 - 1, max(0, int(state / binSize)));
@@ -600,7 +781,7 @@ void defaultFixFunction() {
     Serial.println("Napięcie zostało skalibrowane: " + String(calibratedVoltage));
 
     // Kalibracja prądu
-    float rawCurrent = analogRead(A1);
+    float rawCurrent = analogRead(A0;
     float calibratedCurrent = calibrateCurrent(rawCurrent);
     Serial.println("Prąd został skalibrowany: " + String(calibratedCurrent));
 
@@ -632,7 +813,7 @@ void reduceExcitationCurrent() {
 // Implementacja funkcji calibrateBrakingEffect
 void calibrateBrakingEffect() {
     // Przykładowa implementacja kalibracji efektu hamowania
-    float rawBrakingEffect = analogRead(A2);
+    float rawBrakingEffect = analogRead(A0);
     float calibratedBrakingEffect = rawBrakingEffect * (5.0 / 1023.0);
     Serial.println("Efekt hamowania został skalibrowany: " + String(calibratedBrakingEffect));
 }
@@ -666,15 +847,47 @@ float calibrateCurrent(float rawCurrent) {
     return calibratedCurrent;
 }
 
-// Implementacja funkcji autoTunePID
 void autoTunePID(float& Kp, float& Ki, float& Kd, float setpoint, float measuredValue) {
     float error = calculateError(setpoint, measuredValue);
+
     // Przykładowa implementacja automatycznego dostrajania parametrów PID
-    Kp = 1.0; // Przykładowa wartość
-    Ki = 0.1; // Przykładowa wartość
-    Kd = 0.01; // Przykładowa wartość
+    // Możesz dostosować te wartości na podstawie swoich wymagań
+    float newKp = Kp;
+    float newKi = Ki;
+    float newKd = Kd;
+
+    // Przykładowa logika dostrajania PID
+    if (error > 0) {
+        newKp += 0.1;
+        newKi += 0.01;
+        newKd += 0.001;
+    }
+    else {
+        newKp -= 0.1;
+        newKi -= 0.01;
+        newKd -= 0.001;
+    }
+
+    // Upewnij się, że wartości PID są w odpowiednich zakresach
+    newKp = constrain(newKp, MIN_KP, MAX_KP);
+    newKi = constrain(newKi, MIN_KI, MAX_KI);
+    newKd = constrain(newKd, MIN_KD, MAX_KD);
+
+    // Aktualizacja parametrów PID
+    Kp = newKp;
+    Ki = newKi;
+    Kd = newKd;
+
     Serial.println("Automatyczne dostrajanie PID zakończone.");
+    Serial.print("Nowe wartości PID: Kp=");
+    Serial.print(Kp);
+    Serial.print(", Ki=");
+    Serial.print(Ki);
+    Serial.print(", Kd=");
+    Serial.println(Kd);
 }
+
+
 
 // Implementacja funkcji chooseActionAgent3
 float chooseActionAgent3(int discreteState[2], float epsilon) {
@@ -741,19 +954,19 @@ void updateQAgent3(float state[2], float action, float reward, float nextState[2
 // Implementacja funkcji readTemperature
 float readTemperature() {
     // Przykładowa implementacja odczytu temperatury
-    return analogRead(A3) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 }
 
 // Implementacja funkcji readBrakeWear
 float readBrakeWear() {
     // Przykładowa implementacja odczytu zużycia hamulców
-    return analogRead(A4) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 }
 
 // Implementacja funkcji readRotationalSpeed
 float readRotationalSpeed() {
     // Przykładowa implementacja odczytu prędkości obrotowej
-    return analogRead(A5) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
 }
 
 // Inicjalizacja tablicy Q
@@ -866,7 +1079,7 @@ float readVoltage() {
 
 // Funkcja do odczytu prądu wzbudzenia
 float readExcitationCurrent() {
-    int rawValue = analogRead(A1);
+    int rawValue = analogRead(A0);
     if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
         Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
         return -1.0; // Zwróć wartość błędu
@@ -876,7 +1089,7 @@ float readExcitationCurrent() {
 
 // Funkcja do odczytu efektu hamowania
 float readBrakingEffect() {
-    int rawValue = analogRead(A2);
+    int rawValue = analogRead(A0);
     if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
         Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
         return -1.0; // Zwróć wartość błędu
@@ -897,9 +1110,9 @@ float calculateError(float setpoint, float measuredValue) {
 
 // Aktualizacja parametrów PID
 void updateControlParameters(float params[3]) {
-    float Kp = params[0];
-    float Ki = params[1];
-    float Kd = params[2];
+    Kp = params[0];
+    Ki = params[1];
+    Kd = params[2];
     pidController.setTunings(Kp, Ki, Kd);
 }
 
@@ -1108,13 +1321,6 @@ int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
 // Aktualna wartość Q 
 float currentQ = qTableAgent3[stateIndex][actionIndex];
 
-// Maksymalna wartość Q dla następnego stanu
-float maxNextQ = qTableAgent3[nextStateIndex][0];
-for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-    if (qTableAgent3[nextStateIndex][i] > maxNextQ) {
-        maxNextQ = qTableAgent3[nextStateIndex][i];
-    }
-}
 
 // Aktualizacja wartości Q
 qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
@@ -1124,10 +1330,11 @@ if (Kp < MIN_KP || Kp > MAX_KP || Ki < MIN_KI || Ki > MAX_KI || Kd < MIN_KD || K
     Serial.println("Error: Invalid parameters");
     return -1.0; // Zwróć wartość błędu
 }
-
-// Przykładowe wartości zadane i zmierzone (w rzeczywistości powinny pochodzić z systemu)
-float setpoint = VOLTAGE_SETPOINT; // Docelowe napięcie
-float measuredValues[10] = { 228.0, 229.5, 230.5, 231.0, 229.0, 230.0, 230.2, 229.8, 230.1, 230.0 };
+void someFunction() {
+    float setpoint = VOLTAGE_SETPOINT;
+    float measuredValue = voltage;
+    float error = calculateError(setpoint, measuredValue); // Upewnij się, że calculateError przyjmuje dwa argumenty
+}
 
 // Inicjalizacja kontrolera PID
 PID pidController(Kp, Ki, Kd);
@@ -1405,7 +1612,7 @@ float readVoltage() {
 
 // Funkcja odczytu prądu wzbudzenia
 float readExcitationCurrent() {
-    float rawCurrent = analogRead(A1) * (MAX_CURRENT / ADC_MAX_VALUE);
+    float rawCurrent = analogRead(0) * (MAX_CURRENT / ADC_MAX_VALUE);
     float calibratedCurrent = calibrateCurrent(rawCurrent);
     static float filteredCurrent = 0.0; // Inicjalizacja na 0.0
     filteredCurrent = lowPassFilter(calibratedCurrent, filteredCurrent, 0.1);
@@ -1419,7 +1626,7 @@ float lowPassFilter(float currentValue, float previousValue, float alpha) {
 
 // Funkcja odczytu efektu hamowania
 float readBrakingEffect() {
-    float rawBrakingEffect = analogRead(A2) * (MAX_BRAKING_EFFECT / ADC_MAX_VALUE);
+    float rawBrakingEffect = analogRead(0) * (MAX_BRAKING_EFFECT / ADC_MAX_VALUE);
     float calibratedBrakingEffect = calibrateBrakingEffect(rawBrakingEffect);
     static float filteredBrakingEffect = 0.0; // Inicjalizacja na 0.0
     filteredBrakingEffect = lowPassFilter(calibratedBrakingEffect, filteredBrakingEffect, 0.1);
@@ -1547,7 +1754,6 @@ float simulatePIDControl() {
     return simulateSystem(pid, VOLTAGE_SETPOINT, readVoltage());
 }
 
-
 // Definicje zmiennych globalnych
 float voltageIn[2] = { 0 };
 float currentIn[2] = { 0 };
@@ -1557,7 +1763,8 @@ float efficiency = 0.0;
 float efficiencyPercent = 0.0;
 float voltageDrop = 0.0;
 ESP8266WebServer server(80);
-Adafruit_SH1106 display(128, 64, &Wire, -1);
+Adafruit_SH1106 display(OLED_RESET);
+
 int lastAction = 0;
 
 // Definicje zmiennych globalnych dla PID
@@ -1871,7 +2078,13 @@ float Kp = 2.0, Ki = 0.5, Kd = 1.0;
 float previousError = 0;
 float integral = 0;
 
-// Parametry dyskretyzacji
+
+// Parametry automatycznej optymalizacji
+const unsigned long OPTIMIZATION_INTERVAL = 60000;
+const unsigned long TEST_DURATION = 10000;
+unsigned long lastOptimizationTime = 0;
+
+/// Parametry dyskretyzacji
 const int NUM_STATE_BINS_ERROR = 5;
 const int NUM_STATE_BINS_LOAD = 3;
 const int NUM_STATE_BINS_KP = 5;
@@ -1879,12 +2092,8 @@ const int NUM_STATE_BINS_KI = 3;
 const int NUM_STATE_BINS_KD = 3;
 
 const int NUM_ACTIONS = 6;
-float epsilon = 0.3;
+float epsilon
 
-// Parametry automatycznej optymalizacji
-const unsigned long OPTIMIZATION_INTERVAL = 60000;
-const unsigned long TEST_DURATION = 10000;
-unsigned long lastOptimizationTime = 0;
 
 // Zmienne dla optymalizacji bayesowskiej
 BayesOptimizer optimizer;
@@ -1931,6 +2140,10 @@ void controlVoltageRegulator(float voltage, float excitationCurrent) {
     else {
         digitalWrite(mosfetPin, LOW);
     }
+ 
+#define newPin1 D10
+#define newPin2 D2   
+#define newPin3 D3 
 
     // Kontrola trzech tranzystorów stabilizatora napięcia
     analogWrite(newPin1, map(voltage, 0, 230, 0, 255));
@@ -1945,6 +2158,9 @@ void controlExcitationTransistors(float excitationCurrent) {
         Serial.println("Prąd wzbudzenia poza zakresem!");
         return;
     }
+    // Definicje stałych i zmiennych
+#define bjtPin4 9 // Przykładowa definicja pinu, zmień na odpowiedni pin
+    int pwmValueBJT4 = 128; // Przykładowa wartość PWM, zmień na odpowiednią wartość
 
     // Rozdzielenie prądu wzbudzenia na cztery tranzystory BJT
     float baseCurrentPerTransistor = excitationCurrent / 4.0; // Dzielimy prąd na 4 tranzystory
@@ -2421,22 +2637,52 @@ public:
         feedbackFromAgent3 = feedback;
     }
 
-    // Proces uczenia agenta
     void learn(float error, float load) {
         int currentState = discretizeState(error, load);
-        int action = chooseAction();
+        int action = chooseAction(); // Upewnij się, że chooseAction nie wymaga argumentów
         executeAction(action);
-
-        float newError = VOLTAGE_SETPOINT - currentVoltage;
-        float newLoad = currentCurrent / MAX_CURRENT; // Normalizacja obciążenia
-        int nextState = discretizeState(newError, newLoad);
-
-        float nextObservation = analogRead(muxInputPin);
-        float rewardValue = reward(nextObservation, feedbackFromAgent3);
-
-        updateQ(nextState, rewardValue, action);
-        state = nextState;
     }
+
+
+        int discretizeState(float error, float load) {
+    // Normalizacja błędu do zakresu [0, 1]
+    float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
+    int discreteError = static_cast<int>(normalizedError * (NUM_STATE_BINS_ERROR - 1));
+    
+    // Normalizacja obciążenia do zakresu [0, 1]
+    float normalizedLoad = (load - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
+    int discreteLoad = static_cast<int>(normalizedLoad * (NUM_STATE_BINS_LOAD - 1));
+    
+    // Upewnienie się, że dyskretyzowane wartości są w zakresie
+    if (discreteError < 0) {
+        discreteError = 0;
+    } else if (discreteError >= NUM_STATE_BINS_ERROR) {
+        discreteError = NUM_STATE_BINS_ERROR - 1;
+    }
+    
+    if (discreteLoad < 0) {
+        discreteLoad = 0;
+    } else if (discreteLoad >= NUM_STATE_BINS_LOAD) {
+        discreteLoad = NUM_STATE_BINS_LOAD - 1;
+    }
+    
+    // Kombinacja dyskretyzowanych wartości w jeden stan
+    return discreteError * NUM_STATE_BINS_LOAD + discreteLoad;
+}
+
+// Przykład użycia w kodzie
+void someFunction() {
+    float newError = VOLTAGE_SETPOINT - currentVoltage;
+    float newLoad = currentCurrent / MAX_CURRENT; // Normalizacja obciążenia
+    int nextState = discretizeState(newError, newLoad);
+
+    float nextObservation = analogRead(muxInputPin);
+    float rewardValue = reward(nextObservation, feedbackFromAgent3);
+
+    updateQ(nextState, rewardValue, action);
+    state = nextState;
+}
+
 
 private:
     // Znalezienie najlepszej akcji na podstawie tablicy Q
@@ -2658,6 +2904,145 @@ void initializeTestValues() {
         initialized = true;
     }
 }
+void TaskDisplay(void* pvParameters) {
+    (void)pvParameters;
+    for (;;) {
+        // Kod zadania Display
+        Serial.println("TaskDisplay is running");
+        vTaskDelay(1000 / portTICK_PERIOD_MS); // Opóźnienie 1 sekundy
+    }
+}
+
+void TaskSerial(void* pvParameters) {
+    (void)pvParameters;
+    for (;;) {
+        // Kod zadania Serial
+        Serial.println("TaskSerial is running");
+        vTaskDelay(500 / portTICK_PERIOD_MS); // Opóźnienie 0.5 sekundy
+    }
+}
+
+void TaskEnergyManagement(void* pvParameters) {
+    (void)pvParameters;
+    for (;;) {
+        // Kod zadania EnergyManagement
+        energyManagement();
+        vTaskDelay(1000 / portTICK_PERIOD_MS); // Opóźnienie 1 sekundy
+    }
+}
+
+void setup() {
+    // Inicjalizacja komunikacji szeregowej
+    Serial.begin(115200); // Ustawienie prędkości transmisji na 115200 bps
+    while (!Serial) {
+        ; // Czekaj na otwarcie portu szeregowego
+    }
+
+    // Inicjalizacja wyświetlacza
+    if (!display.begin(SH1106_SWITCHCAPVCC, 0x3C)) {
+        Serial.println(F("SH1106 allocation failed"));
+        for (;;); // Zatrzymanie programu w przypadku niepowodzenia
+    }
+    display.display();
+    delay(2000);
+    display.clearDisplay();
+
+    // Inicjalizacja semaforów
+    resourceSemaphore = xSemaphoreCreateMutex();
+    eepromSemaphore = xSemaphoreCreateMutex();
+
+    if (resourceSemaphore == NULL || eepromSemaphore == NULL) {
+        Serial.println("Błąd podczas tworzenia semaforów.");
+    }
+    else {
+        Serial.println("Semafory zostały pomyślnie utworzone.");
+    }
+
+    // Inicjalizacja EEPROM
+    EEPROM.begin(512);
+
+    // Ustawienie docelowego napięcia dla wszystkich agentów
+    setTargetVoltageForAllAgents(VOLTAGE_SETPOINT);
+
+    // Wywołanie funkcji centralController
+    centralController();
+
+    // Inicjalizacja zmiennych globalnych
+    initializeGlobalVariables();
+
+    // Przykładowe dane do zapisu w EEPROM
+    int address = 0;
+    byte value = 42;
+    writeEEPROM(address, value);
+
+    // Inicjalizacja mapy funkcji naprawczych
+    initializeFixFunctions();
+
+    // Trenuj model uczenia maszynowego
+    trainModel();
+
+    // Inicjalizacja komunikacji I2C
+    Wire.begin();
+
+    // Inicjalizacja tablicy Q
+    initializeQTable();
+
+    // Inicjalizacja pinów
+    initializePins();
+
+    // Tworzenie zadań dla agentów
+    createAgentTasks();
+
+    // Inicjalizacja komponentów
+    initializeComponents();
+
+    // Inicjalizacja zmiennej stateAgent3
+    stateAgent3.state[0] = 0.0;
+    stateAgent3.state[1] = 0.0;
+    stateAgent3.discreteState[0] = 0;
+    stateAgent3.discreteState[1] = 0;
+
+    // Przykładowe wartości dla stateAgent3.state
+    stateAgent3.state[0] = 0.5;
+    stateAgent3.state[1] = 1.2;
+
+    // Wywołanie funkcji dyskretyzującej
+    discretizeStateAgent3(stateAgent3.state, stateAgent3.discreteState);
+
+    // Wyświetlenie zdyskretyzowanych wartości
+    Serial.print("Discrete State 0: ");
+    Serial.println(stateAgent3.discreteState[0]);
+    Serial.print("Discrete State 1: ");
+    Serial.println(stateAgent3.discreteState[1]);
+
+    // Tworzenie zadań FreeRTOS
+    xTaskCreate(TaskDisplay, "Display", 128, NULL, 1, NULL);
+    xTaskCreate(TaskSerial, "Serial", 128, NULL, 1, NULL);
+    xTaskCreate(TaskEnergyManagement, "EnergyManagement", 128, NULL, 1, NULL);
+
+    // Uruchomienie planisty
+    vTaskStartScheduler();
+
+    Serial.println(F("Setup complete"));
+}
+
+void TaskSerial(void* pvParameters) {
+    (void)pvParameters;
+    for (;;) {
+        // Obsługa komunikacji szeregowej
+        handleSerialCommunication();
+        vTaskDelay(500 / portTICK_PERIOD_MS); // Opóźnienie 0.5 sekundy
+    }
+}
+
+void TaskEnergyManagement(void* pvParameters) {
+    (void)pvParameters;
+    for (;;) {
+        // Kod zadania EnergyManagement
+        energyManagement();
+        vTaskDelay(1000 / portTICK_PERIOD_MS); // Opóźnienie 1 sekundy
+    }
+}
 
 void loop() {
     mainLoop();
@@ -2676,7 +3061,6 @@ void mainLoop() {
     // Definicja tablicy params
     float params[3] = { 1.0, 0.1, 0.01 };
     updateControlParameters(params); // Poprawne wywołanie
-
 
     // Obliczenie błędu regulacji
     float error = calculateError(VOLTAGE_SETPOINT, voltage);
@@ -2873,773 +3257,696 @@ void updateObservedPower(float inputPower) {
     minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
 }
 
-void setup() {
-    // Inicjalizacja komunikacji szeregowej
-    Serial.begin(115200); // Ustawienie prędkości transmisji na 115200 bps
-    while (!Serial) {
-        ; // Czekaj na otwarcie portu szeregowego
-    }
 
-    // Inicjalizacja wyświetlacza
-    if (!display.begin(SH1106_SWITCHCAPVCC, 0x3C)) {
-        Serial.println(F("SH1106 allocation failed"));
-        for (;;); // Zatrzymanie programu w przypadku niepowodzenia
-    }
-    display.display();
-    delay(2000);
-    display.clearDisplay();
 
-    // Inicjalizacja semaforów
-    initializeSemaphores();
-
-    // Inicjalizacja EEPROM
-    EEPROM.begin(512);
-
-    // Ustawienie docelowego napięcia dla wszystkich agentów
-    setTargetVoltageForAllAgents(VOLTAGE_SETPOINT);
-
-    // Wywołanie funkcji centralController
-    centralController();
-
-    // Inicjalizacja zmiennych globalnych
-    initializeGlobalVariables();
-
-    // Przykładowe dane do zapisu w EEPROM
-    int address = 0;
-    byte value = 42;
-    writeEEPROM(address, value);
+void loop() {
 
     // Inicjalizacja mapy funkcji naprawczych
-    initializeFixFunctions();
-
-    // Trenuj model uczenia maszynowego
-    trainModel();
-
-    // Inicjalizacja komunikacji I2C
-    Wire.begin();
-
-    // Inicjalizacja tablicy Q
-    initializeQTable();
+    void initializeFixFunctions() {
+        fixFunctions["default"] = defaultFixFunction;
+        fixFunctions["Voltage out of range"] = resetVoltageController;
+        fixFunctions["Current exceeds maximum limit"] = reduceExcitationCurrent;
+        fixFunctions["Braking effect out of range"] = calibrateBrakingEffect;
+        // Dodaj inne funkcje naprawcze w razie potrzeby
+    }
 
     // Inicjalizacja pinów
-    initializePins();
+    void initializePins() {
+        int pins[] = { muxSelectPinA, muxSelectPinB, muxSelectPinC, muxSelectPinD, mosfetPin, bjtPin1, bjtPin2, bjtPin3, excitationBJT1Pin, excitationBJT2Pin, newPin1, newPin2, newPin3, bjtPin4 };
+        for (int pin : pins) {
+            pinMode(pin, OUTPUT);
+        }
+        pinMode(muxInputPin, INPUT);
+    }
 
     // Tworzenie zadań dla agentów
-    createAgentTasks();
+    void createAgentTasks() {
+        xTaskCreate(agent1Function, "Agent1", 2048, NULL, 1, NULL);
+        xTaskCreate(agent2Function, "Agent2", 2048, NULL, 1, NULL);
+        xTaskCreate(agent3Function, "Agent3", 2048, NULL, 1, NULL);
+    }
 
     // Inicjalizacja komponentów
-    initializeComponents();
-
-    // Inicjalizacja zmiennej stateAgent3
-    stateAgent3.state[0] = 0.0;
-    stateAgent3.state[1] = 0.0;
-    stateAgent3.discreteState[0] = 0;
-    stateAgent3.discreteState[1] = 0;
-
-    // Przykładowe wartości dla stateAgent3.state
-    stateAgent3.state[0] = 0.5;
-    stateAgent3.state[1] = 1.2;
-
-    // Wywołanie funkcji dyskretyzującej
-    discretizeStateAgent3(stateAgent3.state, stateAgent3.discreteState);
-
-    // Wyświetlenie zdyskretyzowanych wartości
-    Serial.print("Discrete State 0: ");
-    Serial.println(stateAgent3.discreteState[0]);
-    Serial.print("Discrete State 1: ");
-    Serial.println(stateAgent3.discreteState[1]);
-
-    Serial.println(F("Setup complete"));
-}
-
-void loop() {
-    
-// Inicjalizacja mapy funkcji naprawczych
-void initializeFixFunctions() {
-    fixFunctions["default"] = defaultFixFunction;
-    fixFunctions["Voltage out of range"] = resetVoltageController;
-    fixFunctions["Current exceeds maximum limit"] = reduceExcitationCurrent;
-    fixFunctions["Braking effect out of range"] = calibrateBrakingEffect;
-    // Dodaj inne funkcje naprawcze w razie potrzeby
-}
-
-// Inicjalizacja pinów
-void initializePins() {
-    int pins[] = { muxSelectPinA, muxSelectPinB, muxSelectPinC, muxSelectPinD, mosfetPin, bjtPin1, bjtPin2, bjtPin3, excitationBJT1Pin, excitationBJT2Pin, newPin1, newPin2, newPin3, bjtPin4 };
-    for (int pin : pins) {
-        pinMode(pin, OUTPUT);
+    void initializeComponents() {
+        initializeServer();
+        initializeOptimizer();
+        displayWelcomeMessage();
+        initializeGlobalVariables();
+        initializeWiFi();
     }
-    pinMode(muxInputPin, INPUT);
-}
 
-// Tworzenie zadań dla agentów
-void createAgentTasks() {
-    xTaskCreate(agent1Function, "Agent1", 2048, NULL, 1, NULL);
-    xTaskCreate(agent2Function, "Agent2", 2048, NULL, 1, NULL);
-    xTaskCreate(agent3Function, "Agent3", 2048, NULL, 1, NULL);
-}
-
-// Inicjalizacja komponentów
-void initializeComponents() {
-    initializeServer();
-    initializeOptimizer();
-    displayWelcomeMessage();
-    initializeGlobalVariables();
-    initializeWiFi();
-}
-
-// Inicjalizacja serwera
-void initializeServer() {
-    server.begin();
-}
-
-// Inicjalizacja PID
-void initializePID() {
-    PID pid(1.0, 0.1, 0.01);
-    float setpoint = 230.0; // Docelowe napięcie
-    float measuredValue = readVoltage(); // Funkcja do odczytu napięcia
-
-    autoTunePID(pid, setpoint, measuredValue);
-
-    // Teraz możesz używać pid do kontroli
-    float output = pid.compute(setpoint, measuredValue);
-    analogWrite(mosfetPin, constrain(output, 0, 255));
-}
-
-
-
-// Inicjalizacja optymalizatora
-void initializeOptimizer() {
-    optimizer.initialize(3, bounds, 50, 10);
-}
-
-// Wyświetlenie wiadomości powitalnej
-void displayWelcomeMessage() {
-    char buffer[64];
-    strcpy_P(buffer, welcomeMessage);
-    display.println(buffer);
-    display.display();
-}
-
-// Inicjalizacja zmiennych globalnych
-void initializeGlobalVariables() {
-    externalVoltage = 0.0;
-    externalCurrent = 0.0;
-    efficiency = 0.0;
-    efficiencyPercent = 0.0;
-    voltageDrop = 0.0;
-    currentVoltage = 0.0;
-    currentCurrent = 0.0;
-}
-
-// Inicjalizacja WiFi
-void initializeWiFi() {
-    WiFi.begin("admin", "admin");
-    unsigned long startAttemptTime = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
-        delay(1000);
-        Serial.println("Łączenie z WiFi...");
+    // Inicjalizacja serwera
+    void initializeServer() {
+        server.begin();
     }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Połączono z WiFi");
-        Serial.print("Adres IP: ");
-        Serial.println(WiFi.localIP());
-    }
-    else {
-        Serial.println("Nie udało się połączyć z WiFi");
-    }
-}
 
-// Aktualizacja priorytetu agenta
-void updateAgentPriority(int agentId) {
-    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-        if (agents[i].id == agentId) {
-            agents[i].waitCount++; // Zwiększ licznik prób uzyskania dostępu
-            agents[i].waitTime = millis(); // Ustaw czas oczekiwania
-            // Ustal priorytet na podstawie liczby prób i czasu oczekiwania
-            agents[i].priority = agents[i].waitCount + (millis() - agents[i].waitTime) / 1000;
-            agents[i].priority = constrain(agents[i].priority, 0, 10); // Ogranicz maksymalny priorytet
-            break;
+    // Inicjalizacja PID
+    void initializePID() {
+        PID pid(1.0, 0.1, 0.01);
+        float setpoint = 230.0; // Docelowe napięcie
+        float measuredValue = readVoltage(); // Funkcja do odczytu napięcia
+
+        autoTunePID(pid, setpoint, measuredValue);
+
+        // Teraz możesz używać pid do kontroli
+        float output = pid.compute(setpoint, measuredValue);
+        analogWrite(mosfetPin, constrain(output, 0, 255));
+    }
+
+
+
+    // Inicjalizacja optymalizatora
+    void initializeOptimizer() {
+        optimizer.initialize(3, bounds, 50, 10);
+    }
+
+    // Wyświetlenie wiadomości powitalnej
+    void displayWelcomeMessage() {
+        char buffer[64];
+        strcpy_P(buffer, welcomeMessage);
+        display.println(buffer);
+        display.display();
+    }
+
+    // Inicjalizacja zmiennych globalnych
+    void initializeGlobalVariables() {
+        externalVoltage = 0.0;
+        externalCurrent = 0.0;
+        efficiency = 0.0;
+        efficiencyPercent = 0.0;
+        voltageDrop = 0.0;
+        currentVoltage = 0.0;
+        currentCurrent = 0.0;
+    }
+
+    // Inicjalizacja WiFi
+    void initializeWiFi() {
+        WiFi.begin("admin", "admin");
+        unsigned long startAttemptTime = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
+            delay(1000);
+            Serial.println("Łączenie z WiFi...");
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("Połączono z WiFi");
+            Serial.print("Adres IP: ");
+            Serial.println(WiFi.localIP());
+        }
+        else {
+            Serial.println("Nie udało się połączyć z WiFi");
         }
     }
-}
 
-// Zwraca agenta o najwyższym priorytecie
-int getHighestPriorityAgent() {
-    int highestPriority = -1;
-    int index = -1;
-    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-        if (agents[i].priority > highestPriority) {
-            highestPriority = agents[i].priority;
-            index = i;
+    // Aktualizacja priorytetu agenta
+    void updateAgentPriority(int agentId) {
+        for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
+            if (agents[i].id == agentId) {
+                agents[i].waitCount++; // Zwiększ licznik prób uzyskania dostępu
+                agents[i].waitTime = millis(); // Ustaw czas oczekiwania
+                // Ustal priorytet na podstawie liczby prób i czasu oczekiwania
+                agents[i].priority = agents[i].waitCount + (millis() - agents[i].waitTime) / 1000;
+                agents[i].priority = constrain(agents[i].priority, 0, 10); // Ogranicz maksymalny priorytet
+                break;
+            }
         }
     }
-    return index; // Zwraca indeks agenta o najwyższym priorytecie
-}
 
-// Ustawia PWM
-bool setPWM(int pin, float action, int agentId) {
-    int agentIndex = getHighestPriorityAgent();
+    // Zwraca agenta o najwyższym priorytecie
+    int getHighestPriorityAgent() {
+        int highestPriority = -1;
+        int index = -1;
+        for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
+            if (agents[i].priority > highestPriority) {
+                highestPriority = agents[i].priority;
+                index = i;
+            }
+        }
+        return index; // Zwraca indeks agenta o najwyższym priorytecie
+    }
 
-    // Sprawdź, czy agent o najwyższym priorytecie to ten, który prosi o dostęp
-    if (agentIndex != -1 && agents[agentIndex].id == agentId) {
-        if (xSemaphoreTake(resourceSemaphore, pdMS_TO_TICKS(100)) == pdTRUE) {
-            unsigned long currentTime = millis();
-            if (currentTime - agents[agentIndex].lastAccessTime < timeSlice) {
-                int pwmValue = (int)(action * 255.0);
-                pwmValue = constrain(pwmValue, 0, 255);
-                analogWrite(pin, pwmValue);
-                agents[agentIndex].lastAccessTime = currentTime; // Ustaw czas ostatniego dostępu
-                xSemaphoreGive(resourceSemaphore); // Zwolnienie semafora
+    // Ustawia PWM
+    bool setPWM(int pin, float action, int agentId) {
+        int agentIndex = getHighestPriorityAgent();
 
-                // Resetowanie priorytetu agenta po udanym dostępie
-                agents[agentIndex].waitCount = 0; // Resetuj licznik prób
-                agents[agentIndex].priority = 0;   // Resetuj priorytet
-                return true; // Sukces
+        // Sprawdź, czy agent o najwyższym priorytecie to ten, który prosi o dostęp
+        if (agentIndex != -1 && agents[agentIndex].id == agentId) {
+            if (xSemaphoreTake(resourceSemaphore, pdMS_TO_TICKS(100)) == pdTRUE) {
+                unsigned long currentTime = millis();
+                if (currentTime - agents[agentIndex].lastAccessTime < timeSlice) {
+                    int pwmValue = (int)(action * 255.0);
+                    pwmValue = constrain(pwmValue, 0, 255);
+                    analogWrite(pin, pwmValue);
+                    agents[agentIndex].lastAccessTime = currentTime; // Ustaw czas ostatniego dostępu
+                    xSemaphoreGive(resourceSemaphore); // Zwolnienie semafora
+
+                    // Resetowanie priorytetu agenta po udanym dostępie
+                    agents[agentIndex].waitCount = 0; // Resetuj licznik prób
+                    agents[agentIndex].priority = 0;   // Resetuj priorytet
+                    return true; // Sukces
+                }
+                else {
+                    // Jeśli czas przydzielony minął, resetuj dostęp
+                    xSemaphoreGive(resourceSemaphore);
+                    return false; // Niepowodzenie, czas przydzielony minął
+                }
             }
             else {
-                // Jeśli czas przydzielony minął, resetuj dostęp
-                xSemaphoreGive(resourceSemaphore);
-                return false; // Niepowodzenie, czas przydzielony minął
+                Serial.println("Timeout while waiting for semaphore.");
+                updateAgentPriority(agentId); // Aktualizacja priorytetu, jeśli czas oczekiwania
+                return false; // Niepowodzenie
             }
         }
-        else {
-            Serial.println("Timeout while waiting for semaphore.");
-            updateAgentPriority(agentId); // Aktualizacja priorytetu, jeśli czas oczekiwania
-            return false; // Niepowodzenie
-        }
-    }
-    return false; // Agent nie ma dostępu
-}
-
-// Wykonuje akcję agenta
-void executeActionAgent(int agentId, float action) {
-    int pin;
-    switch (agentId) {
-    case 1:
-        pin = 9; // Pin dla Agenta 1
-        break;
-    case 2:
-        pin = 10; // Pin dla Agenta 2
-        break;
-    case 3:
-        pin = 11; // Pin dla Agenta 3
-        break;
-    default:
-        Serial.println("Invalid agent ID.");
-        return;
-    }
-    if (!setPWM(pin, action, agentId)) {
-        Serial.printf("Agent %d failed to set PWM.\n", agentId);
-    }
-}
-
-// Inicjalizacja komponentów
-void initializeComponents() {
-    // Dodaj tutaj kod inicjalizujący inne komponenty
-}
-
-// Wyświetlenie wiadomości powitalnej
-void displayWelcome() {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 0);
-    display.println("Witamy!");
-    display.display();
-}
-
-// Inicjalizacja zmiennych globalnych
-void initializeGlobals() {
-    // Dodaj tutaj kod inicjalizujący zmienne globalne
-}
-
-// Automatyczna kalibracja systemu
-void autoCalibrateSystem() {
-    // Dodaj tutaj kod kalibracji systemu
-}
-
-// Inicjalizacja parametrów PID
-void initializePIDParams() {
-    handlePIDParams(Kp, Ki, Kd, false);
-    previousError = 0;
-    integral = 0;
-}
-
-// Inicjalizacja tras serwera
-void initializeServerRoutes() {
-    server.on("/", []() {
-        server.send(200, "text/plain", "Witaj w systemie stabilizacji napięcia!");
-        });
-    server.begin();
-}
-
-void initializeRandomSeed() {
-    randomSeed(analogRead(0));
-}
-
-void displayWelcomeMessageSerial() {
-    Serial.println(FPSTR(welcomeMessage));
-}
-
-void initializeAgent1State() {
-    stateAgent1[0] = 0.0;
-    stateAgent1[1] = 0.0;
-    actionAgent1 = 0.0;
-}
-
-void initializeBayesianOptimization() {
-    bestEfficiency = 0.0;
-    lastOptimizationTime = millis();
-}
-
-float objectiveFunction(const float* params) {
-    // Przypisanie parametrów PID
-    float Kp = params[0];
-    float Ki = params[1];
-    float Kd = params[2];
-
-    // Symulacja lub rzeczywiste testowanie wydajności systemu
-    // Tutaj zakładamy, że mamy funkcję `simulateSystem` która zwraca wydajność
-    float efficiency = simulateSystem(Kp, Ki, Kd);
-
-    return efficiency;
-}
-
-float evaluate(float threshold) {
-    // Implementacja funkcji oceniającej
-    // Zwraca wartość oceny dla danego progu
-    float voltage = readVoltage();
-    return (voltage > threshold) ? 1.0 : 0.0; // Próg przekroczony lub nie
-}
-
-void selectMuxChannel(int channel) {
-    digitalWrite(muxSelectPinA, channel & 1);
-    digitalWrite(muxSelectPinB, (channel >> 1) & 1);
-    digitalWrite(muxSelectPinC, (channel >> 2) & 1);
-    digitalWrite(muxSelectPinD, (channel >> 3) & 1);
-}
-
-// Funkcja odczytu sensorów
-void readSensors() {
-    // Odczyt z czujników napięcia (kanały 0 i 1)
-    for (int i = 0; i < 2; i++) {
-        selectMuxChannel(i);
-        voltageIn[i] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        return false; // Agent nie ma dostępu
     }
 
-    // Odczyt z czujników prądu (kanały 2 i 3)
-    for (int i = 0; i < 2; i++) {
-        selectMuxChannel(i + 2);
-        currentIn[i] = calculateCurrent(analogRead(muxInputPin));
-    }
-}
-
-// Funkcja obliczania prądu
-float calculateCurrent(int raw_current_adc) {
-    float sensorVoltage = raw_current_adc * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-    float voltageOffset = VOLTAGE_REFERENCE / 2;
-    sensorVoltage -= voltageOffset;
-    const float sensitivity = 0.185; // Dostosuj, jeśli czułość Twoich czujników jest inna
-    return sensorVoltage / sensitivity;
-}
-
-// Funkcja sprawdzania alarmów
-void checkAlarm() {
-    if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
-        Serial.println("Alarm: Napięcie przekroczyło górny próg!");
-    }
-    else if (voltageIn[0] < VOLTAGE_SETPOINT - VOLTAGE_REGULATION_HYSTERESIS) {
-        Serial.println("Alarm: Napięcie spadło poniżej dolnego progu!");
-    }
-}
-
-// Funkcja automatycznej kalibracji
-void autoCalibrate() {
-    Serial.println("Rozpoczynanie automatycznej kalibracji...");
-
-    // Kalibracja napięcia
-    float measuredVoltage = readVoltage();
-    Serial.print("Zmierzono napięcie: ");
-    Serial.println(measuredVoltage);
-
-    // Kalibracja prądu
-    float measuredCurrent = readCurrent();
-    Serial.print("Zmierzono prąd: ");
-    Serial.println(measuredCurrent);
-
-    // Ustawienie parametrów kalibracji
-    float voltageCalibrationFactor = VOLTAGE_REFERENCE / measuredVoltage;
-    float currentCalibrationFactor = MAX_CURRENT / measuredCurrent;
-
-    Serial.print("Współczynnik kalibracji napięcia: ");
-    Serial.println(voltageCalibrationFactor);
-    Serial.print("Współczynnik kalibracji prądu: ");
-    Serial.println(currentCalibrationFactor);
-
-    // Zapisanie współczynników kalibracji do pamięci EEPROM
-    EEPROM.begin(512);
-    EEPROM.put(0, voltageCalibrationFactor);
-    EEPROM.put(sizeof(voltageCalibrationFactor), currentCalibrationFactor);
-    EEPROM.commit();
-
-    Serial.println("Kalibracja zakończona.");
-}
-
-// Funkcja zarządzania energią
-void energyManagement() {
-    int excitationValue = (currentIn[0] > LOAD_THRESHOLD) ? 255 : 0;
-    analogWrite(excitationBJT1Pin, excitationValue);
-    analogWrite(excitationBJT2Pin, excitationValue);
-}
-
-// Funkcja aktualizacji wyświetlacza
-void updateDisplay(float efficiencyPercent) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE, BLACK); // Ustawienie koloru tekstu na biały na czarnym tle
-    display.setCursor(0, 0);
-    display.println("System Status:");
-    display.print("Napięcie: ");
-    display.print(readVoltage());
-    display.println(" V");
-    display.print("Prąd: ");
-    display.print(readExcitationCurrent());
-    display.println(" A");
-    display.print("Wydajność: ");
-    display.print(efficiencyPercent);
-    display.println(" %");
-    display.print("Braking Effect: ");
-    display.print(readBrakingEffect());
-    display.println(" %");
-    display.display();
-}
-
-// Funkcja obsługująca komendy z portu szeregowego
-void handleSerialCommands() {
-    if (Serial.available()) {
-        String command = Serial.readStringUntil('\n');
-        command.trim(); // Usuwa białe znaki na początku i końcu
-
-        if (command == "START") {
-            Serial.println("Komenda START otrzymana");
-            // Dodaj tutaj kod do uruchomienia odpowiedniej funkcji
-        }
-        else if (command == "STOP") {
-            Serial.println("Komenda STOP otrzymana");
-            // Dodaj tutaj kod do zatrzymania odpowiedniej funkcji
-        }
-        else if (command == "OPTIMIZE") {
-            Serial.println("Komenda OPTIMIZE otrzymana");
-            optimizePID();
-        }
-        else {
-            Serial.println("Nieznana komenda: " + command);
-        }
-    }
-}
-
-// Funkcja dostosowująca częstotliwość sterowania
-void adjustControlFrequency() {
-    static unsigned long lastAdjustmentTime = 0;
-    if (millis() - lastAdjustmentTime > 1000) {
-        if (stopCompute) { // Sprawdź flagę stopCompute
-            return; // Jeśli obliczenia są zatrzymane, wyjdź z funkcji
-        }
-
-        if (currentIn[0] > LOAD_THRESHOLD) {
-            controlFrequency = HIGH_FREQUENCY;
-        }
-        else {
-            controlFrequency = LOW_FREQUENCY;
-        }
-        lastAdjustmentTime = millis();
-    }
-}
-
-// Funkcja obliczająca wydajność
-float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
-    float inputPower = voltageIn * currentIn;
-    float outputPower = externalVoltage * externalCurrent;
-
-    if (inputPower == 0) {
-        return 0;
-    }
-
-    return outputPower / inputPower;
-}
-
-// Funkcja logująca błędy do EEPROM
-void logError(String error) {
-    int addr = 0;
-    while (addr < 512) {
-        if (EEPROM.read(addr) == 0) {
-            if (addr + error.length() + 1 < 512) { // Sprawdzenie, czy jest wystarczająco dużo miejsca
-                for (int i = 0; i < error.length(); i++) {
-                    EEPROM.write(addr + i, error[i]);
-                }
-                EEPROM.write(addr + error.length(), 0); // Zakończenie stringa
-                EEPROM.commit();
-            }
+    // Wykonuje akcję agenta
+    void executeActionAgent(int agentId, float action) {
+        int pin;
+        switch (agentId) {
+        case 1:
+            pin = 9; // Pin dla Agenta 1
             break;
+        case 2:
+            pin = 10; // Pin dla Agenta 2
+            break;
+        case 3:
+            pin = 11; // Pin dla Agenta 3
+            break;
+        default:
+            Serial.println("Invalid agent ID.");
+            return;
         }
-        addr += error.length() + 1;
+        if (!setPWM(pin, action, agentId)) {
+            Serial.printf("Agent %d failed to set PWM.\n", agentId);
+        }
     }
-}
 
-// Funkcja odczytująca logi błędów z EEPROM
-void readErrorLog() {
-    int addr = 0;
-    while (addr < 512) {
-        char c = EEPROM.read(addr);
-        if (c == 0) break;
-        String error = "";
-        while (c != 0) {
-            error += c;
+    // Inicjalizacja komponentów
+    void initializeComponents() {
+        // Dodaj tutaj kod inicjalizujący inne komponenty
+    }
+
+    // Wyświetlenie wiadomości powitalnej
+    void displayWelcome() {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(WHITE);
+        display.setCursor(0, 0);
+        display.println("Witamy!");
+        display.display();
+    }
+
+    // Inicjalizacja zmiennych globalnych
+    void initializeGlobals() {
+        // Dodaj tutaj kod inicjalizujący zmienne globalne
+    }
+
+    // Automatyczna kalibracja systemu
+    void autoCalibrateSystem() {
+        // Dodaj tutaj kod kalibracji systemu
+    }
+
+    // Inicjalizacja parametrów PID
+    void initializePIDParams() {
+        handlePIDParams(Kp, Ki, Kd, false);
+        previousError = 0;
+        integral = 0;
+    }
+
+    // Inicjalizacja tras serwera
+    void initializeServerRoutes() {
+        server.on("/", []() {
+            server.send(200, "text/plain", "Witaj w systemie stabilizacji napięcia!");
+            });
+        server.begin();
+    }
+
+    void initializeRandomSeed() {
+        randomSeed(analogRead(0));
+    }
+
+    void displayWelcomeMessageSerial() {
+        Serial.println(FPSTR(welcomeMessage));
+    }
+
+    void initializeAgent1State() {
+        stateAgent1[0] = 0.0;
+        stateAgent1[1] = 0.0;
+        actionAgent1 = 0.0;
+    }
+
+    void initializeBayesianOptimization() {
+        bestEfficiency = 0.0;
+        lastOptimizationTime = millis();
+    }
+
+    float objectiveFunction(const float* params) {
+        // Przypisanie parametrów PID
+        float Kp = params[0];
+        float Ki = params[1];
+        float Kd = params[2];
+
+        // Symulacja lub rzeczywiste testowanie wydajności systemu
+        // Tutaj zakładamy, że mamy funkcję `simulateSystem` która zwraca wydajność
+        float efficiency = simulateSystem(Kp, Ki, Kd);
+
+        return efficiency;
+    }
+
+    float evaluate(float threshold) {
+        // Implementacja funkcji oceniającej
+        // Zwraca wartość oceny dla danego progu
+        float voltage = readVoltage();
+        return (voltage > threshold) ? 1.0 : 0.0; // Próg przekroczony lub nie
+    }
+
+    void selectMuxChannel(int channel) {
+        digitalWrite(muxSelectPinA, channel & 1);
+        digitalWrite(muxSelectPinB, (channel >> 1) & 1);
+        digitalWrite(muxSelectPinC, (channel >> 2) & 1);
+        digitalWrite(muxSelectPinD, (channel >> 3) & 1);
+    }
+
+    // Funkcja odczytu sensorów
+    void readSensors() {
+        // Odczyt z czujników napięcia (kanały 0 i 1)
+        for (int i = 0; i < 2; i++) {
+            selectMuxChannel(i);
+            voltageIn[i] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        }
+
+        // Odczyt z czujników prądu (kanały 2 i 3)
+        for (int i = 0; i < 2; i++) {
+            selectMuxChannel(i + 2);
+            currentIn[i] = calculateCurrent(analogRead(muxInputPin));
+        }
+    }
+
+    // Funkcja obliczania prądu
+    float calculateCurrent(int raw_current_adc) {
+        float sensorVoltage = raw_current_adc * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+        float voltageOffset = VOLTAGE_REFERENCE / 2;
+        sensorVoltage -= voltageOffset;
+        const float sensitivity = 0.185; // Dostosuj, jeśli czułość Twoich czujników jest inna
+        return sensorVoltage / sensitivity;
+    }
+
+    // Funkcja sprawdzania alarmów
+    void checkAlarm() {
+        if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
+            Serial.println("Alarm: Napięcie przekroczyło górny próg!");
+        }
+        else if (voltageIn[0] < VOLTAGE_SETPOINT - VOLTAGE_REGULATION_HYSTERESIS) {
+            Serial.println("Alarm: Napięcie spadło poniżej dolnego progu!");
+        }
+    }
+
+    // Funkcja automatycznej kalibracji
+    void autoCalibrate() {
+        Serial.println("Rozpoczynanie automatycznej kalibracji...");
+
+        // Kalibracja napięcia
+        float measuredVoltage = readVoltage();
+        Serial.print("Zmierzono napięcie: ");
+        Serial.println(measuredVoltage);
+
+        // Kalibracja prądu
+        float measuredCurrent = readCurrent();
+        Serial.print("Zmierzono prąd: ");
+        Serial.println(measuredCurrent);
+
+        // Ustawienie parametrów kalibracji
+        float voltageCalibrationFactor = VOLTAGE_REFERENCE / measuredVoltage;
+        float currentCalibrationFactor = MAX_CURRENT / measuredCurrent;
+
+        Serial.print("Współczynnik kalibracji napięcia: ");
+        Serial.println(voltageCalibrationFactor);
+        Serial.print("Współczynnik kalibracji prądu: ");
+        Serial.println(currentCalibrationFactor);
+
+        // Zapisanie współczynników kalibracji do pamięci EEPROM
+        EEPROM.begin(512);
+        EEPROM.put(0, voltageCalibrationFactor);
+        EEPROM.put(sizeof(voltageCalibrationFactor), currentCalibrationFactor);
+        EEPROM.commit();
+
+        Serial.println("Kalibracja zakończona.");
+    }
+
+    // Funkcja zarządzania energią
+    void energyManagement() {
+        int excitationValue = (currentIn[0] > LOAD_THRESHOLD) ? 255 : 0;
+        analogWrite(excitationBJT1Pin, excitationValue);
+        analogWrite(excitationBJT2Pin, excitationValue);
+    }
+
+    // Funkcja aktualizacji wyświetlacza
+    void updateDisplay(float efficiencyPercent) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(WHITE, BLACK); // Ustawienie koloru tekstu na biały na czarnym tle
+        display.setCursor(0, 0);
+        display.println("System Status:");
+        display.print("Napięcie: ");
+        display.print(readVoltage());
+        display.println(" V");
+        display.print("Prąd: ");
+        display.print(readExcitationCurrent());
+        display.println(" A");
+        display.print("Wydajność: ");
+        display.print(efficiencyPercent);
+        display.println(" %");
+        display.print("Braking Effect: ");
+        display.print(readBrakingEffect());
+        display.println(" %");
+        display.display();
+    }
+
+    // Funkcja obsługująca komendy z portu szeregowego
+    void handleSerialCommands() {
+        if (Serial.available()) {
+            String command = Serial.readStringUntil('\n');
+            command.trim(); // Usuwa białe znaki na początku i końcu
+
+            if (command == "START") {
+                Serial.println("Komenda START otrzymana");
+                // Dodaj tutaj kod do uruchomienia odpowiedniej funkcji
+            }
+            else if (command == "STOP") {
+                Serial.println("Komenda STOP otrzymana");
+                // Dodaj tutaj kod do zatrzymania odpowiedniej funkcji
+            }
+            else if (command == "OPTIMIZE") {
+                Serial.println("Komenda OPTIMIZE otrzymana");
+                optimizePID();
+            }
+            else {
+                Serial.println("Nieznana komenda: " + command);
+            }
+        }
+    }
+
+    // Funkcja dostosowująca częstotliwość sterowania
+    void adjustControlFrequency() {
+        static unsigned long lastAdjustmentTime = 0;
+        if (millis() - lastAdjustmentTime > 1000) {
+            if (stopCompute) { // Sprawdź flagę stopCompute
+                return; // Jeśli obliczenia są zatrzymane, wyjdź z funkcji
+            }
+
+            if (currentIn[0] > LOAD_THRESHOLD) {
+                controlFrequency = HIGH_FREQUENCY;
+            }
+            else {
+                controlFrequency = LOW_FREQUENCY;
+            }
+            lastAdjustmentTime = millis();
+        }
+    }
+
+    // Funkcja obliczająca wydajność
+    float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
+        float inputPower = voltageIn * currentIn;
+        float outputPower = externalVoltage * externalCurrent;
+
+        if (inputPower == 0) {
+            return 0;
+        }
+
+        return outputPower / inputPower;
+    }
+
+    // Funkcja logująca błędy do EEPROM
+    void logError(String error) {
+        int addr = 0;
+        while (addr < 512) {
+            if (EEPROM.read(addr) == 0) {
+                if (addr + error.length() + 1 < 512) { // Sprawdzenie, czy jest wystarczająco dużo miejsca
+                    for (int i = 0; i < error.length(); i++) {
+                        EEPROM.write(addr + i, error[i]);
+                    }
+                    EEPROM.write(addr + error.length(), 0); // Zakończenie stringa
+                    EEPROM.commit();
+                }
+                break;
+            }
+            addr += error.length() + 1;
+        }
+    }
+
+    // Funkcja odczytująca logi błędów z EEPROM
+    void readErrorLog() {
+        int addr = 0;
+        while (addr < 512) {
+            char c = EEPROM.read(addr);
+            if (c == 0) break;
+            String error = "";
+            while (c != 0) {
+                error += c;
+                addr++;
+                c = EEPROM.read(addr);
+            }
+            Serial.println("Logged error: " + error);
             addr++;
-            c = EEPROM.read(addr);
         }
-        Serial.println("Logged error: " + error);
-        addr++;
-    }
-}
-
-// Funkcja wykrywająca anomalie
-void detectAnomalies() {
-    float voltage = readVoltage();
-    float current = readExcitationCurrent();
-    float brakingEffect = readBrakingEffect();
-
-    // Wykorzystanie modelu uczenia maszynowego do przewidywania błędów
-    String predictedError = predictWithModel(voltage, current, brakingEffect);
-    if (predictedError != "") {
-        handleAnomaly(predictedError);
-    }
-}
-
-// Funkcja obsługująca wykryte anomalie
-void handleAnomaly(String anomaly) {
-    Serial.println("Anomaly detected: " + anomaly);
-    logError(anomaly);
-    generateAndImplementFix(anomaly); // Wywołanie funkcji naprawczej dla anomalii
-}
-
-// Prosta funkcja przewidująca błędy na podstawie reguł
-String predictError(float voltage, float current, float brakingEffect) {
-    if (voltage < 220.0 || voltage > 240.0) {
-        return "Voltage out of range";
-    }
-    if (current > MAX_CURRENT) {
-        return "Current exceeds maximum limit";
-    }
-    if (brakingEffect < 0.0 || brakingEffect > 100.0) {
-        return "Braking effect out of range";
-    }
-    return "";
-}
-
-// Funkcja dodająca funkcję naprawczą dla danego błędu
-void addFixFunction(String error, void(*fixFunction)()) {
-    fixFunctions[error] = fixFunction;
-}
-
-// Domyślna funkcja naprawcza
-void defaultFixFunction() {
-    Serial.println("No specific fix available. Executing default fix...");
-    // Kod domyślnej naprawy
-}
-
-// Funkcja trenująca model
-void trainModel() {
-    // Przykładowe trenowanie modelu (w rzeczywistości powinno być bardziej zaawansowane)
-    modelWeights[0] = 1.2; // Waga dla napięcia
-    modelWeights[1] = 1.5; // Waga dla prądu
-    modelWeights[2] = 0.8; // Waga dla efektu hamowania
-    modelWeights[3] = 2.0; // Dodatkowa waga dla bardziej złożonego modelu
-}
-
-// Funkcja przewidująca błędy za pomocą modelu
-String predictWithModel(float voltage, float current, float brakingEffect) {
-    // Prosty model liniowy do przewidywania błędów
-    float score = modelWeights[0] * voltage + modelWeights[1] * current + modelWeights[2] * brakingEffect + modelWeights[3] * (voltage * current);
-    if (score > 1500) { // Zwiększony próg dla wykrywania większych anomalii
-        return "Anomaly detected by model";
-    }
-    return "";
-}
-
-// Funkcja aktualizująca wyświetlacz
-void updateDisplay() {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 0);
-    display.println("System Status:");
-    display.println("Voltage: " + String(readVoltage()) + " V");
-    display.println("Current: " + String(readExcitationCurrent()) + " A");
-    display.println("Braking Effect: " + String(readBrakingEffect()));
-    display.display();
-}
-
-void loop() {
-    unsigned long currentMillis = millis();
-
-    // Aktualizacja wyświetlacza
-    if (currentMillis - previousMillisDisplay >= intervalDisplay) {
-        previousMillisDisplay = currentMillis;
-        updateDisplay();
     }
 
-    // Obsługa poleceń szeregowych
-    handleSerialCommands();
+    // Funkcja wykrywająca anomalie
+    void detectAnomalies() {
+        float voltage = readVoltage();
+        float current = readExcitationCurrent();
+        float brakingEffect = readBrakingEffect();
 
-    // Wykrywanie połączenia z komputerem
-    detectComputerConnection();
-
-    // Trenowanie agentów
-    trainAgents();
-
-    // Komunikacja między agentami
-    communicateBetweenAgents();
-
-    // Kontrola tranzystorów
-    controlTransistors(currentVoltage, currentCurrent);
-
-    // Obsługa komunikacji szeregowej
-    if (currentMillis - previousMillisSerial >= intervalSerial) {
-        previousMillisSerial = currentMillis;
-        handleSerialCommunication();
+        // Wykorzystanie modelu uczenia maszynowego do przewidywania błędów
+        String predictedError = predictWithModel(voltage, current, brakingEffect);
+        if (predictedError != "") {
+            handleAnomaly(predictedError);
+        }
     }
 
-    // Obsługa serwera
-    server.handleClient();
-
-    // Przykładowe wywołanie funkcji optymalizacji
-    optimize();
-
-    // Przykładowe wywołanie funkcji auto-strojenia PID
-    autoTunePID();
-
-    // Przykładowe wywołanie funkcji hill climbing
-    hillClimbing();
-
-    // Przykładowe wywołanie funkcji agenta 3
-    handleAgent3();
-
-    // Krótkie opóźnienie, aby symulować czas rzeczywisty
-    delay(100);
-
-    // Aktualizacja bieżących wartości napięcia i prądu
-    updateCurrentValues();
-
-    // Regularne wywoływanie optymalizacji PID
-    handlePIDOptimization();
-
-    // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
-    float inputPower = readInputPower(); // Odczytaj moc wejściową
-    updateObservedPower(inputPower); // Aktualizuj obserwowaną moc
-
-    // Dodanie nowej pętli z warunkiem wyjścia
-    handleLoopWithExitCondition();
-
-    // Symulacja systemu
-    simulateSystemPerformance();
-
-    // Przykładowe aktualizacje potrzeb agentów
-    updateAgentNeeds();
-
-    // Wysyłanie danych do komputera
-    sendDataToComputer();
-
-    // Aktualizacja priorytetów agentów
-    updateAgentPriorities();
-
-    // Przydzielanie zasobów agentom
-    allocateResources();
-
-    // Przykładowa logika sterowania
-    controlLogic();
-
-    // Monitorowanie błędów i wykrywanie anomalii
-    monitorErrors();
-    detectAnomalies();
-    delay(1000); // Sprawdzaj błędy co 1 sekundę
-
-    // Przypisz testowe wartości do używanych zmiennych raz na starcie
-    static bool initialized = false;
-    if (!initialized) {
-        epsilon = testEpsilon;
-        learningRate = testLearningRate;
-        discountFactor = testDiscountFactor;
-        initialized = true;
+    // Funkcja obsługująca wykryte anomalie
+    void handleAnomaly(String anomaly) {
+        Serial.println("Anomaly detected: " + anomaly);
+        logError(anomaly);
+        generateAndImplementFix(anomaly); // Wywołanie funkcji naprawczej dla anomalii
     }
 
-    // Przykładowe użycie zmiennej stateAgent3
-    discretizeStateAgent3(stateAgent3.state, stateAgent3.discreteState);
-    float action = chooseActionAgent3(stateAgent3.discreteState, testEpsilon);
-    executeActionAgent3(action);
-    float reward = calculateRewardAgent3(stateAgent3.state, action);
-    float nextState[2] = { 0.0, 0.0 }; // Przykładowe następne stany
-    updateQAgent3(stateAgent3.state, action, reward, nextState);
-}
+    // Prosta funkcja przewidująca błędy na podstawie reguł
+    String predictError(float voltage, float current, float brakingEffect) {
+        if (voltage < 220.0 || voltage > 240.0) {
+            return "Voltage out of range";
+        }
+        if (current > MAX_CURRENT) {
+            return "Current exceeds maximum limit";
+        }
+        if (brakingEffect < 0.0 || brakingEffect > 100.0) {
+            return "Braking effect out of range";
+        }
+        return "";
+    }
+
+    // Funkcja dodająca funkcję naprawczą dla danego błędu
+    void addFixFunction(String error, void(*fixFunction)()) {
+        fixFunctions[error] = fixFunction;
+    }
+
+    // Domyślna funkcja naprawcza
+    void defaultFixFunction() {
+        Serial.println("No specific fix available. Executing default fix...");
+        // Kod domyślnej naprawy
+    }
+
+    // Funkcja trenująca model
+    void trainModel() {
+        // Przykładowe trenowanie modelu (w rzeczywistości powinno być bardziej zaawansowane)
+        modelWeights[0] = 1.2; // Waga dla napięcia
+        modelWeights[1] = 1.5; // Waga dla prądu
+        modelWeights[2] = 0.8; // Waga dla efektu hamowania
+        modelWeights[3] = 2.0; // Dodatkowa waga dla bardziej złożonego modelu
+    }
+
+    // Funkcja przewidująca błędy za pomocą modelu
+    String predictWithModel(float voltage, float current, float brakingEffect) {
+        // Prosty model liniowy do przewidywania błędów
+        float score = modelWeights[0] * voltage + modelWeights[1] * current + modelWeights[2] * brakingEffect + modelWeights[3] * (voltage * current);
+        if (score > 1500) { // Zwiększony próg dla wykrywania większych anomalii
+            return "Anomaly detected by model";
+        }
+        return "";
+    }
+
+    // Funkcja aktualizująca wyświetlacz
+    void updateDisplay() {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(WHITE);
+        display.setCursor(0, 0);
+        display.println("System Status:");
+        display.println("Voltage: " + String(readVoltage()) + " V");
+        display.println("Current: " + String(readExcitationCurrent()) + " A");
+        display.println("Braking Effect: " + String(readBrakingEffect()));
+        display.display();
+    }
+
+    void loop() {
+        unsigned long currentMillis = millis();
+
+        // Aktualizacja wyświetlacza
+        if (currentMillis - previousMillisDisplay >= intervalDisplay) {
+            previousMillisDisplay = currentMillis;
+            updateDisplay();
+        }
+
+        // Obsługa poleceń szeregowych
+        handleSerialCommands();
+
+        // Wykrywanie połączenia z komputerem
+        detectComputerConnection();
+
+        // Trenowanie agentów
+        trainAgents();
+
+        // Komunikacja między agentami
+        communicateBetweenAgents();
+
+        // Kontrola tranzystorów
+        controlTransistors(currentVoltage, currentCurrent);
+
+        // Obsługa komunikacji szeregowej
+        if (currentMillis - previousMillisSerial >= intervalSerial) {
+            previousMillisSerial = currentMillis;
+            handleSerialCommunication();
+        }
+
+        // Obsługa serwera
+        server.handleClient();
+
+        // Przykładowe wywołanie funkcji optymalizacji
+        optimize();
+
+        // Przykładowe wywołanie funkcji auto-strojenia PID
+        autoTunePID();
+
+        // Przykładowe wywołanie funkcji hill climbing
+        hillClimbing();
+
+        // Przykładowe wywołanie funkcji agenta 3
+        handleAgent3();
+
+        // Krótkie opóźnienie, aby symulować czas rzeczywisty
+        delay(100);
+
+        // Aktualizacja bieżących wartości napięcia i prądu
+        updateCurrentValues();
+
+        // Regularne wywoływanie optymalizacji PID
+        handlePIDOptimization();
+
+        // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
+        float inputPower = readInputPower(); // Odczytaj moc wejściową
+        updateObservedPower(inputPower); // Aktualizuj obserwowaną moc
+
+        // Dodanie nowej pętli z warunkiem wyjścia
+        handleLoopWithExitCondition();
+
+        // Symulacja systemu
+        simulateSystemPerformance();
+
+        // Przykładowe aktualizacje potrzeb agentów
+        updateAgentNeeds();
+
+        // Wysyłanie danych do komputera
+        sendDataToComputer();
+
+        // Aktualizacja priorytetów agentów
+        updateAgentPriorities();
+
+        // Przydzielanie zasobów agentom
+        allocateResources();
+
+        // Przykładowa logika sterowania
+        controlLogic();
+
+        // Monitorowanie błędów i wykrywanie anomalii
+        monitorErrors();
+        detectAnomalies();
+        delay(1000); // Sprawdzaj błędy co 1 sekundę
+
+        // Przypisz testowe wartości do używanych zmiennych raz na starcie
+        static bool initialized = false;
+        if (!initialized) {
+            epsilon = testEpsilon;
+            learningRate = testLearningRate;
+            discountFactor = testDiscountFactor;
+            initialized = true;
+        }
+
+        // Przykładowe użycie zmiennej stateAgent3
+        discretizeStateAgent3(stateAgent3.state, stateAgent3.discreteState);
+        float action = chooseActionAgent3(stateAgent3.discreteState, testEpsilon);
+        executeActionAgent3(action);
+        float reward = calculateRewardAgent3(stateAgent3.state, action);
+        float nextState[2] = { 0.0, 0.0 }; // Przykładowe następne stany
+        updateQAgent3(stateAgent3.state, action, reward, nextState);
+    }
 
 
-// Wywołania funkcji Q-learning dla agentów
-qLearning(1, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-qLearning(2, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-qLearning(3, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
+    // Wywołania funkcji Q-learning dla agentów
+    qLearning(1, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
+    qLearning(2, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
+    qLearning(3, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
 
-// Przykładowe wywołanie funkcji simulateVoltageControl
-float Kp = 1.0, Ki = 0.5, Kd = 0.1;
-float voltageError = simulateVoltageControl(Kp, Ki, Kd);
-Serial.println(voltageError);
+    // Przykładowe wywołanie funkcji simulateVoltageControl
+    float Kp = 1.0, Ki = 0.5, Kd = 0.1;
+    float voltageError = simulateVoltageControl(Kp, Ki, Kd);
+    Serial.println(voltageError);
 
-// Przykładowe wywołanie funkcji simulateExcitationControl
-float excitationError = simulateExcitationControl();
-Serial.println(excitationError);
+    // Przykładowe wywołanie funkcji simulateExcitationControl
+    float excitationError = simulateExcitationControl();
+    Serial.println(excitationError);
 
-// Przykładowe wywołanie funkcji someFunctionOfOtherParameters
-float rotationalSpeed = 3000.0;
-float torque = 50.0;
-float frictionCoefficient = 0.8;
-float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-Serial.println(brakingEffect);
+    // Przykładowe wywołanie funkcji someFunctionOfOtherParameters
+    float rotationalSpeed = 3000.0;
+    float torque = 50.0;
+    float frictionCoefficient = 0.8;
+    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
+    Serial.println(brakingEffect);
 
-// Sprawdzenie, czy są dostępne dane do odczytu
-if (mySerial.available()) {
-    String command = mySerial.readStringUntil('\n');
-    if (command == "START_COMPUTE") {
-        Serial.println("Rozpoczęcie obliczeń");
-        stopCompute = false; // Reset flagi przed rozpoczęciem obliczeń
+    // Sprawdzenie, czy są dostępne dane do odczytu
+    if (mySerial.available()) {
+        String command = mySerial.readStringUntil('\n');
+        if (command == "START_COMPUTE") {
+            Serial.println("Rozpoczęcie obliczeń");
+            stopCompute = false; // Reset flagi przed rozpoczęciem obliczeń
 
-        while (true) {
-            // Wysłanie danych do komputera
-            mySerial.println("DANE_DO_PRZETWORZENIA");
+            while (true) {
+                // Wysłanie danych do komputera
+                mySerial.println("DANE_DO_PRZETWORZENIA");
 
-            // Oczekiwanie na potwierdzenie
-            while (!mySerial.available()) {
-                // Czekanie na potwierdzenie
+                // Oczekiwanie na potwierdzenie
+                while (!mySerial.available()) {
+                    // Czekanie na potwierdzenie
+                    if (stopCompute) {
+                        break;
+                    }
+                }
+
+                if (stopCompute) {
+                    break;
+                }
+
+                String ack = mySerial.readStringUntil('\n');
+                if (ack == "ACK") {
+                    Serial.println("Potwierdzenie odebrane");
+                }
+
+                // Warunek wyjścia z pętli
                 if (stopCompute) {
                     break;
                 }
             }
-
-            if (stopCompute) {
-                break;
-            }
-
-            String ack = mySerial.readStringUntil('\n');
-            if (ack == "ACK") {
-                Serial.println("Potwierdzenie odebrane");
-            }
-
-            // Warunek wyjścia z pętli
-            if (stopCompute) {
-                break;
-            }
         }
     }
-}
 }
 
 // Funkcja do trenowania agentów
@@ -3763,11 +4070,11 @@ float readVoltage() {
 }
 
 float readExcitationCurrent() {
-    return readSensorValue(A1);
+    return readSensorValue(0);
 }
 
 float readBrakingEffect() {
-    return readSensorValue(A2);
+    return readSensorValue(0);
 }
 
 // Funkcja monitorująca błędy
@@ -3957,7 +4264,7 @@ void exampleUsage() {
 }
 
 // Funkcja do obsługi opóźnień
-void delayWithMessage(unsigned long delayTime, const String& message) {
+void delayWithMessage(unsigned long delayTime, const String & message) {
     Serial.println(message);
     delay(delayTime);
 }
@@ -4003,6 +4310,7 @@ float calculateError(float voltage, float current, float brakingEffect) {
 
 // Przykładowa funkcja aktualizująca parametry sterowania
 void updateControlParameters(float error) {
+   
     // Przykładowa aktualizacja parametrów sterowania
     float newKp = Kp + error * 0.1;
     float newKi = Ki + error * 0.01;
@@ -4129,24 +4437,80 @@ void qLearning(int agent, float voltage, float current, float efficiency, float 
     int state, action, nextState;
     float reward, power_output;
 
+    void discretizeState(float voltageError, float current, float Kp, float Ki, float Kd, float state[5]) {
+        // Przykładowa implementacja dyskretyzacji stanu
+        state[0] = voltageError;
+        state[1] = current;
+        state[2] = Kp;
+        state[3] = Ki;
+        state[4] = Kd;
+    }
+
+    int chooseAction(float state[5]) {
+        // Przykładowa implementacja wyboru akcji
+        return 0; // Zwraca przykładową akcję
+    }
+
+    void executeAction(int action) {
+        // Przykładowa implementacja wykonania akcji
+    }
+
+    float calculateReward(float voltageError, float efficiency, float voltageDrop) {
+        // Przykładowa implementacja obliczania nagrody
+        return 0.0; // Zwraca przykładową nagrodę
+    }
+
+    void updateQ(float state[5], int action, float reward, float nextState[5]) {
+        // Przykładowa implementacja aktualizacji Q
+    }
+
+    void discretizeStateAgent3(float voltageError, float current, float state[2]) {
+        // Przykładowa implementacja dyskretyzacji stanu dla agenta 3
+        state[0] = voltageError;
+        state[1] = current;
+    }
+
+    int chooseActionAgent3(float state[2]) {
+        // Przykładowa implementacja wyboru akcji dla agenta 3
+        return 0; // Zwraca przykładową akcję
+    }
+
+    void executeActionAgent3(int action) {
+        // Przykładowa implementacja wykonania akcji dla agenta 3
+    }
+
+    float calculateRewardAgent3(float efficiency, float voltage, float voltageDrop, float powerOutput) {
+        // Przykładowa implementacja obliczania nagrody dla agenta 3
+        return 0.0; // Zwraca przykładową nagrodę
+    }
+
+    void updateQAgent3(float state[2], int action, float reward, float nextState[2]) {
+        // Przykładowa implementacja aktualizacji Q dla agenta 3
+    }
+
     if (agent == 1 || agent == 2) {
-        state = discretizeState(VOLTAGE_SETPOINT - voltage, current, Kp, Ki, Kd);
-        action = chooseAction(state);
+        float state[5]; // Zakładam, że stan ma 5 elementów, dostosuj w razie potrzeby
+        float nextState[5];
+        discretizeState(VOLTAGE_SETPOINT - voltage, current, Kp, Ki, Kd, state);
+        int action = chooseAction(state);
         executeAction(action);
-        reward = calculateReward(VOLTAGE_SETPOINT - voltage, efficiency, voltageDrop);
-        nextState = discretizeState(VOLTAGE_SETPOINT - voltage, current, Kp, Ki, Kd);
+        float reward = calculateReward(VOLTAGE_SETPOINT - voltage, efficiency, voltageDrop);
+        discretizeState(VOLTAGE_SETPOINT - voltage, current, Kp, Ki, Kd, nextState);
         updateQ(state, action, reward, nextState);
     }
     else if (agent == 3) {
-        power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
-        state = discretizeStateAgent3(VOLTAGE_SETPOINT - voltage, current);
-        action = chooseActionAgent3(state);
+        float state[2]; // Zakładam, że stan ma 2 elementy, dostosuj w razie potrzeby
+        float nextState[2];
+        float power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
+        discretizeStateAgent3(VOLTAGE_SETPOINT - voltage, current, state);
+        int action = chooseActionAgent3(state);
         executeActionAgent3(action);
-        reward = calculateRewardAgent3(efficiency, voltage, voltageDrop, power_output);
-        nextState = discretizeStateAgent3(VOLTAGE_SETPOINT - voltage, current);
+        float reward = calculateRewardAgent3(efficiency, voltage, voltageDrop, power_output);
+        discretizeStateAgent3(VOLTAGE_SETPOINT - voltage, current, nextState);
         updateQAgent3(state, action, reward, nextState);
     }
-}
+
+
 
 
 // Implementacja funkcji centralController
@@ -4182,12 +4546,12 @@ void monitorTransistors() {
         int state = digitalRead(tranzystorPins[i]);
         if (state == LOW) {
             Serial.print("Tranzystor ");
-            Serial.print(i);
+            Serial.print(i + 1); // Dodajemy 1, aby numeracja była od 1
             Serial.println(" jest wyłączony.");
         }
         else {
             Serial.print("Tranzystor ");
-            Serial.print(i);
+            Serial.print(i + 1); // Dodajemy 1, aby numeracja była od 1
             Serial.println(" jest włączony.");
         }
     }
@@ -4202,4 +4566,5 @@ void detectComputerConnection() {
         Serial.println("START_COMPUTE");
     }
 }
+
 
