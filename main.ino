@@ -1,4570 +1,3478 @@
-#include <eigen.h>
-#include <Arduino.h>
-#include <Wire.h>
-#include <EEPROM.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SH1106.h>
+
+
+#define NOMINMAX
+#include <atomic>
+#include <condition_variable>
 #include <Eigen/Dense>
-#include <bayesopt/bayesopt.hpp>
-#include <FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
+#include <windows.h>
+#include <iostream>
 #include <vector>
-#include <cstring>
+#include <cmath>
+#include <cstdlib>
+#include <ctime>
+#include <sstream>
+#include <fstream>
+#include <functional>
+#include <dnnl.hpp>
+#include <immintrin.h>
+#include <openvino/openvino.hpp>
+#include <openvino/opsets/opset8.hpp>
+#include <filesystem>
+#include <openvino/pass/manager.hpp>
+#include <openvino/pass/low_latency.hpp>
+#include <openvino/pass/serialize.hpp>
+#include <thread>
+#include <mutex>
+#include <Eigen/StdVector>
+#include <Eigen/Core>
+#include <random> 
+#include <memory>
+#include <future>
+#include <gdiplus.h>
+#include <clang-c/Index.h>
+#include <clang-c/Platform.h>
+#include <regex>
+#include <nlohmann/json.hpp>
+#include <stdexcept>
+#include <string>
+#include "TrainingData.h"
+#include <chrono>
+#include <commctrl.h>
+#include <cstdio>
+#include <richedit.h>
+#include <locale>
+#include <codecvt>
 #include <queue>
-#include <map>
-#include <cfloat>
-#include <avr/io.h>
-
-
-// Definicje stałych i zmiennych
-#define MAX_CURRENT 25
-#define TOLERANCE 0.5
-#define NUM_STATES_AGENT2 100
-#define MAX_BRAKING_EFFECT 100.0
-#define VOLTAGE_SETPOINT 230.0
-#define PWM_INCREMENT 5
-#define OLED_RESET -1
-
-#define NUM_STATE_BINS_ERROR 10
-#define NUM_STATE_BINS_LOAD 10
-#define NUM_STATE_BINS_KP 10
-#define NUM_STATE_BINS_KI 10
-#define NUM_STATE_BINS_KD 10
-#define NUM_ACTIONS 5
-#define NUM_STATES_AGENT3 100
-#define NUM_ACTIONS_AGENT3 5
-#define NUM_STATE_BINS_AGENT1 10
-#define NUM_STATE_BINS_AGENT2 10
-#define NUM_ACTIONS_AGENT1 5
-#define NUM_ACTIONS_AGENT2 5
-
-
-const float VOLTAGE_REFERENCE = 5.0;
-const int ADC_MAX_VALUE = 1023;
-const float VOLTAGE_REGULATION_HYSTERESIS = 0.1;
-const int INITIAL_BRAKE_PWM = 128;
-const float MIN_ERROR = -5.0;
-const float MAX_ERROR = 5.0;
-const float MIN_LOAD = 0.0;
-const float MAX_LOAD = 1.0;
-const float MIN_KP = 0.0;
-const float MAX_KP = 5.0;
-const float MIN_KI = 0.0;
-const float MAX_KI = 1.0;
-const float MIN_KD = 0.0;
-const float MAX_KD = 2.0;
-const int HIGH_FREQUENCY = 1000;
-const int LOW_FREQUENCY = 100;
-const int controlFrequency = 50;
-const unsigned long timeSlice = 1000;
-const unsigned long maxWaitTime = 5000;
-
-float Kp = 1.0;
-float Ki = 0.1;
-float Kd = 0.01;
-float currentVoltage = 0.0;
-float currentCurrent = 0.0;
-float currentError = 0.0;
-float testEpsilon = 0.2;
-float testLearningRate = 0.05;
-float testDiscountFactor = 0.95;
-bool stopCompute = false;
-float evaluateThreshold = 0.1;
-float previousFilteredValue = 0.0;
-float qTableAgent1[NUM_STATE_BINS_AGENT1][NUM_ACTIONS_AGENT1];
-float qTableAgent2[NUM_STATE_BINS_AGENT2][NUM_ACTIONS_AGENT2];
-float qTableAgent3[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3];
-float bestParams[3] = { 0.0, 0.0, 0.0 };
-float bestObjective = FLT_MAX;
-float learningRate = 0.1;
-float discountFactor = 0.9;
-float voltageError;
-float excitationError;
-float brakingEffect;
-unsigned long currentMillis, previousMillis;
-unsigned long interval;
-float voltage, current;
-float error;
-
-unsigned long previousMillisDisplay = 0;
-unsigned long previousMillisSerial = 0;
-const long intervalDisplay = 1000;
-const long intervalSerial = 500;
 
 
 
-// Definicja klasy SemaphoreGuard
-class SemaphoreGuard {
-public:
-    SemaphoreGuard(SemaphoreHandle_t& semaphore) : semaphore_(semaphore) {
-        xSemaphoreTake(semaphore_, portMAX_DELAY);
+#include <iomanip>
+
+#include <stack>
+
+#include <system_error>
+
+void LogToEditControl(HWND hwndEdit, const std::wstring& message) {
+    int length = GetWindowTextLengthW(hwndEdit);
+    SendMessage(hwndEdit, EM_SETSEL, (WPARAM)length, (LPARAM)length);
+    SendMessage(hwndEdit, EM_REPLACESEL, 0, (LPARAM)message.c_str());
+}
+
+
+void updateErrorEditText(HWND hwndErrorEdit, const std::wstring& text) {
+    SetWindowTextW(hwndErrorEdit, text.c_str());
+}
+
+void LogErrorToEditControl(HWND hwndEdit, const std::wstring& message) {
+    int length = GetWindowTextLengthW(hwndEdit);
+    SendMessage(hwndEdit, EM_SETSEL, (WPARAM)length, (LPARAM)length);
+    SendMessage(hwndEdit, EM_REPLACESEL, 0, (LPARAM)message.c_str());
+}
+#define ID_EDIT_TEXT 101
+#define WM_UPDATE_EDIT (WM_USER + 3)
+#define WM_UPDATE_ERROR_EDIT (WM_USER + 4)
+class RecurrentNeuralNetwork; // Deklaracja klasy
+
+// Deklaracja zmiennych globalnych
+std::atomic<bool> training_in_progress(true);
+std::condition_variable cv;
+std::mutex cv_mtx;
+std::mutex mtx; // Mutex do synchronizacji
+std::vector<double> loss_values;
+std::vector<double> accuracy_values;
+std::mutex clang_mutex;
+std::atomic<bool> kod_zmieniony(false);
+std::mutex kod_mtx;
+std::mutex editTextMutex;
+std::mutex codeMutex;
+std::queue<std::string> message_queue;
+std::mutex queue_mutex;
+std::condition_variable queue_cv;
+std::atomic<bool> running(true);
+std::thread messageThread;
+std::mutex model_mutex;
+std::shared_ptr<RecurrentNeuralNetwork> rnn;
+
+HWND hwndEdit;
+HWND hwndErrorEdit; // Dodano brakującą deklarację
+HWND hMainWindow;
+
+
+
+using namespace std;
+using namespace Eigen;
+
+using namespace Gdiplus;
+
+#pragma comment(lib, "Gdiplus.lib")
+
+
+// Definicja funkcji aktywacji
+enum ActivationFunction {
+    RELU,
+    SIGMOID,
+    TANH
+};
+using AlignedVectorXd = std::vector<Eigen::VectorXd, Eigen::aligned_allocator<Eigen::VectorXd>>;
+using AlignedMatrixXd = std::vector<Eigen::MatrixXd, Eigen::aligned_allocator<Eigen::MatrixXd>>;
+
+
+
+// Funkcja do dodawania komunikatów do kolejki
+void add_message(const std::string& message) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    message_queue.push(message);
+    queue_cv.notify_one();
+}
+
+
+// Funkcja do pobierania komunikatów z kolejki
+std::string get_message() {
+    std::unique_lock<std::mutex> lock(queue_mutex);
+    queue_cv.wait(lock, [] { return !message_queue.empty(); });
+    std::string message = message_queue.front();
+    message_queue.pop();
+    return message;
+}
+
+void validate_index(int& index, int max_index) {
+    if (index < 0) {
+        index = 0;
+    }
+    else if (index >= max_index) {
+        index = max_index - 1;
+    }
+}
+
+
+std::wstring diagnostic_text = L"";
+std::atomic<size_t> total_data_count(0);
+std::atomic<size_t> auto_data_count(0);
+std::atomic<size_t> manual_data_count(0);
+
+void DrawDiagnosticText(HDC hdc, const RECT& rect, const std::wstring& text) {
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(0, 0, 0));
+    DrawTextW(hdc, text.c_str(), -1, const_cast<RECT*>(&rect), DT_LEFT | DT_TOP | DT_WORDBREAK);
+}
+
+void DisplayTrainingResults(HWND hwnd) {
+    std::wstring ws;
+    ws.reserve(1024);
+
+    ws.append(L"Wyniki treningu:\n");
+    for (size_t i = 0; i < loss_values.size(); ++i) {
+        ws.append(L"Epoka " + std::to_wstring(i + 1) + L": Loss = " + std::to_wstring(loss_values[i]) + L", Accuracy = " + std::to_wstring(accuracy_values[i]) + L"\n");
+    }
+    LogToEditControl(hwndErrorEdit, ws);
+}
+
+void check_alignment(const void* data, size_t alignment) {
+    if (reinterpret_cast<uintptr_t>(data) % alignment != 0) {
+        std::wstringstream ws;
+        ws << L"Dane nie są wyrównane do " << alignment << L" bajtów!\n";
+        LogErrorToEditControl(hwndErrorEdit, ws.str());
+    }
+    else {
+        std::wstringstream ws;
+        ws << L"Dane są wyrównane do " << alignment << L" bajtów.\n";
+        LogToEditControl(hwndErrorEdit, ws.str());
+    }
+}
+
+
+
+
+void check_alignment_32(const void* data) {
+    check_alignment(data, 32);
+}
+
+__m128d ploadt(const double* data) {
+    check_alignment(data, 16);
+    return _mm_load_pd(data);
+}
+
+__m128d load(const double* data, int i, int j, int rows, int cols) {
+    if (i < 0 || i >= rows || j < 0 || j >= cols) {
+        throw std::out_of_range("Indeks poza zakresem");
+    }
+    return ploadt(&data[i * cols + j]);
+}
+void matrix_multiply_avx2(const std::vector<float>& A, const std::vector<float>& B, std::vector<float>& C, int N);
+
+
+// Funkcje konwersji
+std::string WideStringToString(const std::wstring& wstr) {
+    if (wstr.empty()) return std::string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+    std::string str(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &str[0], size_needed, NULL, NULL);
+    return str;
+}
+
+std::wstring StringToWideString(const std::string& str) {
+    if (str.empty()) return std::wstring();
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    std::wstring wstr(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstr[0], size_needed);
+    return wstr;
+}
+
+
+void example_usage() {
+    vector<VectorXd> training_data = generuj_dane_treningowe(1000);
+
+    try {
+        double* data = training_data[0].data();
+        int rows = training_data[0].rows();
+        int cols = training_data[0].cols();
+        load(data, 0, 0, rows, cols);
+    }
+    catch (const std::out_of_range& e) {
+        LogErrorToEditControl(hwndErrorEdit, L"Indeks poza zakresem: ");
+        LogErrorToEditControl(hwndErrorEdit, std::wstring(e.what(), e.what() + strlen(e.what())));
     }
 
-    ~SemaphoreGuard() {
-        xSemaphoreGive(semaphore_);
+    int N = 8;
+    std::vector<float> A(N * N, 1.0f);
+    std::vector<float> B(N * N, 1.0f);
+    std::vector<float> C(N * N, 0.0f);
+
+    matrix_multiply_avx2(A, B, C, N);
+
+    std::wstringstream ws;
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            ws << C[i * N + j] << " ";
+        }
+        ws << std::endl;
+    }
+    LogToEditControl(hwndErrorEdit, ws.str());
+
+    std::wstring wstr = L"Przykładowy tekst";
+    std::string str = WideStringToString(wstr);
+    std::wstring converted_back = StringToWideString(str);
+
+    std::wstringstream ws_conversion;
+    ws_conversion << L"Original: " << wstr << std::endl;
+    ws_conversion << L"Converted to string: " << str.c_str() << std::endl;
+    ws_conversion << L"Converted back to wstring: " << converted_back << std::endl;
+    LogToEditControl(hwndErrorEdit, ws_conversion.str());
+}
+
+
+// Przykładowe miejsce w kodzie, gdzie wykonywane jest mnożenie macierzy
+void some_function() {
+    int N = 8; // Przykładowy rozmiar macierzy
+    std::vector<float> A(N * N, 1.0f); // Przykładowa macierz A
+    std::vector<float> B(N * N, 1.0f); // Przykładowa macierz B
+    std::vector<float> C(N * N, 0.0f); // Wynikowa macierz C
+
+    // Zastąpienie istniejącej operacji mnożenia macierzy
+    matrix_multiply_avx2(A, B, C, N);
+
+    // Wyświetlenie wyników
+    std::wstringstream ws;
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            ws << C[i * N + j] << " ";
+        }
+        ws << std::endl;
+    }
+    LogToEditControl(hwndErrorEdit, ws.str());
+}
+
+
+
+vector<VectorXd> generuj_dane_treningowe(size_t liczba_wektorow) {
+    vector<VectorXd> data;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    for (size_t i = 0; i < liczba_wektorow; ++i) {
+        VectorXd vec(224 * 224 * 3);
+        for (int j = 0; j < vec.size(); ++j) {
+            validate_index(j, static_cast<int>(vec.size()));
+            vec[j] = dis(gen);
+        }
+        // Sprawdzenie wyrównania pamięci
+        check_alignment(vec.data(), 16);
+        if (reinterpret_cast<uintptr_t>(vec.data()) % 16 != 0) {
+            continue; // Pomijamy nieprawidłowe dane
+        }
+        data.push_back(vec);
+        auto_data_count++;
+        total_data_count++;
+    }
+
+    // Dodanie dodatkowych zróżnicowanych danych
+    for (size_t i = 0; i < liczba_wektorow / 2; ++i) {
+        VectorXd vec(224 * 224 * 3);
+        for (int j = 0; j < vec.size(); ++j) {
+            validate_index(j, static_cast<int>(vec.size()));
+            vec[j] = dis(gen) * 2.0 - 1.0; // Wartości w zakresie [-1, 1]
+        }
+        // Sprawdzenie wyrównania pamięci
+        check_alignment(vec.data(), 16);
+        if (reinterpret_cast<uintptr_t>(vec.data()) % 16 != 0) {
+            continue; // Pomijamy nieprawidłowe dane
+        }
+        data.push_back(vec);
+        auto_data_count++;
+        total_data_count++;
+    }
+
+    return data;
+}
+
+std::string kod_zrodlowy = R"(
+#include <iostream>
+void funkcja() {
+    std::wstringstream ws;
+    ws << L"Hello, World!" << std::endl;
+    LogToEditControl(hwndErrorEdit, ws.str());
+}
+)";
+
+
+
+// Struktura do przechowywania przypadków testowych
+struct TestCase {
+    std::string input;
+    std::string expected_output;
+};
+
+// Funkcja do uruchamiania testów logicznych
+double run_logical_tests(const std::string& modified_code) {
+    // Zdefiniowanie przypadków testowych
+    std::vector<TestCase> test_cases = {
+        {"input1", "expected_output1"},
+        {"input2", "expected_output2"},
+        // Dodaj więcej przypadków testowych w razie potrzeby
+    };
+
+    // Zapisanie zmodyfikowanego kodu do pliku
+    std::ofstream file("test_code.cpp");
+    if (!file.is_open()) {
+        updateErrorEditText(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu testowego kodu.\n");
+        return 0.0;
+    }
+    file << modified_code;
+    file.close();
+
+    // Kompilacja zmodyfikowanego kodu
+    std::string compile_command = "g++ -o test_code.exe test_code.cpp";
+    int compile_result = std::system(compile_command.c_str());
+    if (compile_result != 0) {
+        updateErrorEditText(hwndErrorEdit, L"Błąd kompilacji testowego kodu.\n");
+        return 0.0;
+    }
+
+    int passed_tests = 0;
+
+    // Uruchomienie testów
+    for (const auto& test_case : test_cases) {
+        // Uruchomienie skompilowanego kodu z danymi wejściowymi
+        std::string run_command = "./test_code.exe " + test_case.input + " > output.txt";
+        int run_result = std::system(run_command.c_str());
+        if (run_result != 0) {
+            updateErrorEditText(hwndErrorEdit, L"Błąd uruchomienia testowego kodu.\n");
+            continue;
+        }
+
+        // Przechwycenie wyników działania kodu
+        std::ifstream output_file("output.txt");
+        if (!output_file.is_open()) {
+            updateErrorEditText(hwndErrorEdit, L"Nie można otworzyć pliku z wynikami.\n");
+            continue;
+        }
+        std::stringstream buffer;
+        buffer << output_file.rdbuf();
+        std::string output = buffer.str();
+        output_file.close();
+
+        // Porównanie uzyskanych wyników z oczekiwanymi
+        if (output == test_case.expected_output) {
+            passed_tests++;
+        }
+        else {
+            std::wstringstream ws;
+            ws << L"Test nie powiódł się. Oczekiwane: " << test_case.expected_output.c_str() << L", Uzyskane: " << output.c_str() << std::endl;
+            updateErrorEditText(hwndErrorEdit, ws.str());
+        }
+    }
+
+    // Obliczenie procentowego pokrycia testami logicznymi
+    double coverage = static_cast<double>(passed_tests) / test_cases.size();
+    return coverage;
+}
+
+
+void AddDataPoint(double loss, double accuracy) {
+    std::lock_guard<std::mutex> lock(mtx);
+    loss_values.push_back(loss);
+    accuracy_values.push_back(accuracy);
+}
+
+
+void DrawGraph(HDC hdc, const RECT& rect, const std::vector<double>& data, const std::wstring& title) {
+    if (data.empty()) return;
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(0, 0, 0));
+    TextOutW(hdc, rect.left + 10, rect.top + 10, title.c_str(), title.length());
+
+    double max_value = *max_element(data.begin(), data.end());
+    double min_value = *min_element(data.begin(), data.end());
+
+    if (max_value == min_value) return;
+
+    int graph_width = rect.right - rect.left;
+    int graph_height = rect.bottom - rect.top;
+
+    Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
+
+    MoveToEx(hdc, rect.left, rect.bottom - static_cast<int>((data[0] - min_value) * graph_height / (max_value - min_value)), NULL);
+    for (size_t i = 1; i < data.size(); ++i) {
+        int x = rect.left + static_cast<int>(i * graph_width / static_cast<int>(data.size()));
+        int y = rect.bottom - static_cast<int>((data[i] - min_value) * graph_height / (max_value - min_value));
+        LineTo(hdc, x, y);
+    }
+}
+
+// Funkcja aktywacji ReLU
+double relu(double x) {
+    return x > 0 ? x : 0;
+}
+
+// Pochodna funkcji aktywacji ReLU
+double relu_derivative(double x) {
+    return x > 0 ? 1 : 0;
+}
+
+// Funkcja aktywacji Sigmoid
+double sigmoid(double x) {
+    return 1.0 / (1.0 + exp(-x));
+}
+
+// Pochodna funkcji aktywacji Sigmoid
+double sigmoid_derivative(double x) {
+    double sig = sigmoid(x);
+    return sig * (1 - sig);
+}
+
+// Funkcja aktywacji Tanh
+double tanh_activation(double x) {
+    return tanh(x);
+}
+
+// Pochodna funkcji aktywacji Tanh
+double tanh_derivative(double x) {
+    double t = tanh(x);
+    return 1 - t * t;
+}
+
+
+
+
+
+// Funkcja zwracająca odpowiednią funkcję aktywacji
+std::function<double(double)> get_activation_function(ActivationFunction func) {
+    switch (func) {
+    case RELU:
+        return relu;
+    case SIGMOID:
+        return sigmoid;
+    case TANH:
+        return tanh_activation;
+    default:
+        return relu;
+    }
+}
+
+// Funkcja zwracająca odpowiednią pochodną funkcji aktywacji
+std::function<double(double)> get_activation_derivative(ActivationFunction func) {
+    switch (func) {
+    case RELU:
+        return relu_derivative;
+    case SIGMOID:
+        return sigmoid_derivative;
+    case TANH:
+        return tanh_derivative;
+    default:
+        return relu_derivative;
+    }
+}
+
+void run_inference_on_npu(const std::string& model_xml_path, const std::string& model_bin_path, const std::vector<VectorXd>& inputs, HWND hwndErrorEdit) {
+    try {
+        ov::Core core;
+        std::shared_ptr<ov::Model> model;
+
+        try {
+            model = core.read_model(model_xml_path, model_bin_path);
+            LogToEditControl(hwndErrorEdit, L"Model pomyślnie wczytany.\n");
+        }
+        catch (const ov::Exception& e) {
+            std::wstringstream ws;
+            ws << L"Wyjątek OpenVINO podczas wczytywania modelu: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (const std::exception& e) {
+            std::wstringstream ws;
+            ws << L"Standardowy wyjątek podczas wczytywania modelu: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (...) {
+            LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas wczytywania modelu.\n");
+            return;
+        }
+
+        ov::CompiledModel compiled_model;
+        try {
+            compiled_model = core.compile_model(model, "AUTO");
+            LogToEditControl(hwndErrorEdit, L"Model pomyślnie skompilowany dla NPU.\n");
+        }
+        catch (const ov::Exception& e) {
+            std::wstringstream ws;
+            ws << L"Wyjątek OpenVINO podczas kompilacji modelu: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (const std::exception& e) {
+            std::wstringstream ws;
+            ws << L"Standardowy wyjątek podczas kompilacji modelu: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (...) {
+            LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas kompilacji modelu.\n");
+            return;
+        }
+
+        ov::InferRequest infer_request;
+        try {
+            infer_request = compiled_model.create_infer_request();
+            LogToEditControl(hwndErrorEdit, L"Żądanie inferencji pomyślnie utworzone.\n");
+        }
+        catch (const ov::Exception& e) {
+            std::wstringstream ws;
+            ws << L"Wyjątek OpenVINO podczas tworzenia żądania inferencji: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (const std::exception& e) {
+            std::wstringstream ws;
+            ws << L"Standardowy wyjątek podczas tworzenia żądania inferencji: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (...) {
+            LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas tworzenia żądania inferencji.\n");
+            return;
+        }
+
+        const ov::Output<const ov::Node>& input_node = model->input();
+        ov::Tensor input_tensor;
+        try {
+            input_tensor = infer_request.get_tensor(input_node);
+        }
+        catch (const ov::Exception& e) {
+            std::wstringstream ws;
+            ws << L"Wyjątek OpenVINO podczas przygotowywania tensora wejściowego: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (const std::exception& e) {
+            std::wstringstream ws;
+            ws << L"Standardowy wyjątek podczas przygotowywania tensora wejściowego: " << e.what() << std::endl;
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            return;
+        }
+        catch (...) {
+            LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas przygotowywania tensora wejściowego.\n");
+            return;
+        }
+
+        for (const auto& input : inputs) {
+            if (input.size() * sizeof(float) > input_tensor.get_byte_size()) {
+                LogErrorToEditControl(hwndErrorEdit, L"Rozmiar danych wejściowych przekracza rozmiar tensora wejściowego.\n");
+                continue;
+            }
+
+            if (input.data() == nullptr) {
+                LogErrorToEditControl(hwndErrorEdit, L"Wskaźnik input nie jest zainicjowany!\n");
+                continue;
+            }
+            if (reinterpret_cast<uintptr_t>(input.data()) % 16 != 0) {
+                LogErrorToEditControl(hwndErrorEdit, L"Dane wejściowe nie są wyrównane do 16 bajtów!\n");
+                continue;
+            }
+            std::memcpy(input_tensor.data<float>(), input.data(), input.size() * sizeof(float));
+
+            try {
+                infer_request.infer();
+                LogToEditControl(hwndErrorEdit, L"Inferencja pomyślnie wykonana.\n");
+            }
+            catch (const ov::Exception& e) {
+                std::wstringstream ws;
+                ws << L"Wyjątek OpenVINO podczas inferencji: " << e.what() << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                return;
+            }
+            catch (const std::exception& e) {
+                std::wstringstream ws;
+                ws << L"Standardowy wyjątek podczas inferencji: " << e.what() << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                return;
+            }
+            catch (...) {
+                LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas inferencji.\n");
+                return;
+            }
+
+            const ov::Output<const ov::Node>& output_node = model->output();
+            ov::Tensor output_tensor;
+            try {
+                output_tensor = infer_request.get_tensor(output_node);
+            }
+            catch (const ov::Exception& e) {
+                std::wstringstream ws;
+                ws << L"Wyjątek OpenVINO podczas pobierania tensora wyjściowego: " << e.what() << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                return;
+            }
+            catch (const std::exception& e) {
+                std::wstringstream ws;
+                ws << L"Standardowy wyjątek podczas pobierania tensora wyjściowego: " << e.what() << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                return;
+            }
+            catch (...) {
+                LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas pobierania tensora wyjściowego.\n");
+                return;
+            }
+
+            try {
+                const float* output_data = output_tensor.data<float>();
+                std::vector<float> output_vector(output_data, output_data + output_tensor.get_size());
+                std::wstringstream ws;
+                ws << L"Wynik inferencji: ";
+                for (const auto& val : output_vector) {
+                    ws << val << L" ";
+                }
+                ws << std::endl;
+                LogToEditControl(hwndErrorEdit, ws.str());
+            }
+            catch (const ov::Exception& e) {
+                std::wstringstream ws;
+                ws << L"Wyjątek OpenVINO podczas przetwarzania wyników inferencji: " << e.what() << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                return;
+            }
+            catch (const std::exception& e) {
+                std::wstringstream ws;
+                ws << L"Standardowy wyjątek podczas przetwarzania wyników inferencji: " << e.what() << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                return;
+            }
+            catch (...) {
+                LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek podczas przetwarzania wyników inferencji.\n");
+                return;
+            }
+        }
+    }
+    catch (const std::exception& e) {
+        std::wstringstream ws;
+        ws << L"Standardowy wyjątek: " << e.what() << std::endl;
+        LogErrorToEditControl(hwndErrorEdit, ws.str());
+    }
+    catch (...) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek.\n");
+    }
+}
+
+// Użycie aligned_allocator dla wektorów i macierzy
+using AlignedVectorXd = std::vector<Eigen::VectorXd, Eigen::aligned_allocator<Eigen::VectorXd>>;
+using AlignedMatrixXd = std::vector<Eigen::MatrixXd, Eigen::aligned_allocator<Eigen::MatrixXd>>;
+
+// Struktura optymalizatora Adam
+struct AdamOptimizer {
+    double learning_rate; // Współczynnik uczenia
+    double beta1; // Parametr beta1
+    double beta2; // Parametr beta2
+    double epsilon; // Parametr epsilon
+    AlignedMatrixXd m; // Wektory m
+    AlignedMatrixXd v; // Wektory v
+    int t; // Licznik iteracji
+
+    // Konstruktor optymalizatora Adam
+    AdamOptimizer(double lr, double b1, double b2, double eps, const AlignedMatrixXd& weights)
+        : learning_rate(lr), beta1(b1), beta2(b2), epsilon(eps), t(0) {
+        for (const auto& w : weights) {
+            m.push_back(Eigen::MatrixXd::Zero(w.rows(), w.cols()));
+            v.push_back(Eigen::MatrixXd::Zero(w.rows(), w.cols()));
+        }
+    }
+
+    // Funkcja aktualizująca wagi
+    void update(AlignedMatrixXd& weights, const AlignedMatrixXd& gradients) {
+        t++;
+        for (size_t i = 0; i < weights.size(); ++i) {
+            m[i] = beta1 * m[i] + (1 - beta1) * gradients[i];
+            v[i] = beta2 * v[i] + (1 - beta2) * gradients[i].cwiseProduct(gradients[i]);
+
+            Eigen::MatrixXd m_hat = m[i] / (1 - pow(beta1, t));
+            Eigen::MatrixXd v_hat = v[i] / (1 - pow(beta2, t));
+
+            weights[i] -= learning_rate * m_hat.array().cwiseQuotient(v_hat.array().sqrt() + epsilon).matrix();
+        }
+    }
+};
+class RecurrentNeuralNetwork {
+public:
+    // Konstruktor przyjmujący cztery argumenty
+    RecurrentNeuralNetwork(int input_size, int hidden_size, int output_size, ActivationFunction activation_func)
+        : input_size(input_size), hidden_size(hidden_size), output_size(output_size), activation_func(activation_func) {
+        Wxh = std::make_unique<MatrixXd>(MatrixXd::Random(hidden_size, input_size));
+        Whh = std::make_unique<MatrixXd>(MatrixXd::Random(hidden_size, hidden_size));
+        Why = std::make_unique<MatrixXd>(MatrixXd::Random(output_size, hidden_size));
+        bh = std::make_unique<VectorXd>(VectorXd::Random(hidden_size));
+        by = std::make_unique<VectorXd>(VectorXd::Random(output_size));
+        h = std::make_unique<VectorXd>(VectorXd::Zero(hidden_size)); // Inicjalizacja wektora stanu ukrytego
+
+        // Dodanie dodatkowych warstw ukrytych
+        Whh2 = std::make_unique<MatrixXd>(MatrixXd::Random(hidden_size, hidden_size));
+        bh2 = std::make_unique<VectorXd>(VectorXd::Random(hidden_size));
+
+        // Sprawdzenie wymiarów macierzy i wektorów
+        std::cout << "Wxh dimensions: " << Wxh->rows() << "x" << Wxh->cols() << std::endl;
+        std::cout << "Whh dimensions: " << Whh->rows() << "x" << Whh->cols() << std::endl;
+        std::cout << "Why dimensions: " << Why->rows() << "x" << Why->cols() << std::endl;
+        std::cout << "bh size: " << bh->size() << std::endl;
+        std::cout << "by size: " << by->size() << std::endl;
+        std::cout << "h size: " << h->size() << std::endl;
+    }
+
+    // Nowy konstruktor przyjmujący trzy argumenty
+    RecurrentNeuralNetwork(int input_size, int hidden_size, int output_size)
+        : RecurrentNeuralNetwork(input_size, hidden_size, output_size, ActivationFunction::RELU) {
+    }
+
+    VectorXd forward(const VectorXd& input) {
+        std::wstringstream ws;
+        ws << L"Rozpoczęcie funkcji forward, rozmiar wejścia: " << input.size() << std::endl;
+        LogToEditControl(hwndErrorEdit, ws.str());
+
+        if (input.size() != input_size) {
+            throw std::invalid_argument("Rozmiar wejścia nie jest zgodny z oczekiwanym rozmiarem " + std::to_string(input_size) + ".");
+        }
+
+        if (input.size() != Wxh->cols()) {
+            throw std::invalid_argument("Rozmiar wejścia nie jest zgodny z rozmiarem macierzy Wxh.");
+        }
+
+        auto activation = get_activation_function(activation_func);
+        for (int i = 0; i < input.size(); ++i) {
+            validate_index(i, input.size());
+        }
+
+        check_alignment(input.data(), 16);
+        check_alignment(Wxh->data(), 16);
+        check_alignment(Whh->data(), 16);
+        check_alignment(bh->data(), 16);
+
+        if (input.data() == nullptr || Wxh->data() == nullptr || Whh->data() == nullptr || bh->data() == nullptr) {
+            throw std::runtime_error("Wskaźnik danych jest nullptr.");
+        }
+
+        if (Wxh->rows() != hidden_size || Whh->rows() != hidden_size || Why->rows() != output_size) {
+            throw std::runtime_error("Rozmiar macierzy nie jest zgodny z oczekiwanym rozmiarem.");
+        }
+
+        *h = (*Wxh * input) + (*Whh * *h) + *bh;
+        *h = h->unaryExpr(activation);
+
+        *h = (*Whh2 * *h) + *bh2;
+        *h = h->unaryExpr(activation);
+
+        VectorXd output = (*Why * *h) + *by;
+        ws.str(L"");
+        ws << L"Zakończenie funkcji forward, rozmiar wyjścia: " << output.size() << std::endl;
+        LogToEditControl(hwndErrorEdit, ws.str());
+        return output;
+    }
+
+    void backward(const VectorXd& input, const VectorXd& target, double learning_rate) {
+        VectorXd output = forward(input);
+        VectorXd error = target - output;
+
+        MatrixXd dWhy = error * h->transpose();
+        VectorXd dby = error;
+        auto activation_derivative = get_activation_derivative(activation_func);
+        VectorXd dh = Why->transpose() * error + h->unaryExpr(activation_derivative);
+
+        *Why += learning_rate * dWhy;
+        *by += learning_rate * dby;
+
+        // Obliczenia gradientów dla Whh2 i bh2
+        VectorXd dh2 = Whh2->transpose() * dh;
+        dh2 = dh2.cwiseProduct(h->unaryExpr(activation_derivative));
+
+        *Whh2 += learning_rate * (dh2 * h->transpose());
+        *bh2 += learning_rate * dh2;
+
+        for (int i = 0; i < input.size(); ++i) {
+            validate_index(i, input.size());
+        }
+        *Wxh += learning_rate * (dh * input.transpose());
+        *Whh += learning_rate * (dh * h->transpose());
+        *bh += learning_rate * dh;
+    }
+
+    
+
+    void train(const vector<VectorXd>& inputs, const vector<VectorXd>& targets, double learning_rate) {
+        for (size_t i = 0; i < inputs.size(); ++i) {
+            backward(inputs[i], targets[i], learning_rate);
+        }
+    }
+
+    // Funkcja zapisu modelu do pliku
+    void save_model(const std::string& filename) {
+        std::ofstream file(filename, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Nie można otworzyć pliku do zapisu: " << filename << std::endl;
+            return;
+        }
+
+        // Zapisujemy wymiary macierzy i wektorów
+        file.write(reinterpret_cast<const char*>(&input_size), sizeof(input_size));
+        file.write(reinterpret_cast<const char*>(&hidden_size), sizeof(hidden_size));
+        file.write(reinterpret_cast<const char*>(&output_size), sizeof(output_size));
+
+        // Zapisujemy wagi i biasy
+        save_matrix(file, *Wxh);
+        save_matrix(file, *Whh);
+        save_matrix(file, *Why);
+        save_vector(file, *bh);
+        save_vector(file, *by);
+
+        file.close();
+    }
+
+    // Funkcja wczytywania modelu z pliku
+    void load_model(const std::string& filename) {
+        std::ifstream file(filename, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Nie można otworzyć pliku do odczytu: " << filename << std::endl;
+            return;
+        }
+
+        // Wczytujemy wymiary macierzy i wektorów
+        file.read(reinterpret_cast<char*>(&input_size), sizeof(input_size));
+        file.read(reinterpret_cast<char*>(&hidden_size), sizeof(hidden_size));
+        file.read(reinterpret_cast<char*>(&output_size), sizeof(output_size));
+
+        // Wczytujemy wagi i biasy
+        load_matrix(file, *Wxh);
+        load_matrix(file, *Whh);
+        load_matrix(file, *Why);
+        load_vector(file, *bh);
+        load_vector(file, *by);
+
+        file.close();
+
+        // Wywołanie run_inference_on_npu po wczytaniu modelu
+        std::vector<VectorXd> dummy_inputs = generuj_dane_treningowe(1); // Przykładowe dane wejściowe
+        run_inference_on_npu("model.xml", "model.bin", dummy_inputs, hwndErrorEdit);
+    }
+
+    // Gettery do prywatnych elementów składowych
+    int get_input_size() const {
+        return input_size;
+    }
+
+    int get_output_size() const {
+        return output_size;
+    }
+
+    // Dodanie metody get_model
+    std::shared_ptr<ov::Model> get_model() const {
+        // Tworzenie modelu OpenVINO
+        auto input = std::make_shared<ov::opset8::Parameter>(ov::element::f32, ov::Shape{ 1, static_cast<size_t>(input_size) });
+        std::shared_ptr<ov::Node> current = input;
+
+        // Dodawanie warstw do modelu
+        auto Wxh_const = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ static_cast<size_t>(hidden_size), static_cast<size_t>(input_size) }, Wxh->data());
+        auto Whh_const = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ static_cast<size_t>(hidden_size), static_cast<size_t>(hidden_size) }, Whh->data());
+        auto bh_const = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ static_cast<size_t>(hidden_size) }, bh->data());
+        auto Why_const = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ static_cast<size_t>(output_size), static_cast<size_t>(hidden_size) }, Why->data());
+        auto by_const = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ static_cast<size_t>(output_size) }, by->data());
+
+        auto Wx_input = std::make_shared<ov::opset8::MatMul>(current, Wxh_const);
+        auto Wh_hidden = std::make_shared<ov::opset8::MatMul>(current, Whh_const);
+        auto hidden_add = std::make_shared<ov::opset8::Add>(Wx_input, Wh_hidden);
+        auto hidden_bias = std::make_shared<ov::opset8::Add>(hidden_add, bh_const);
+        auto hidden_activation = std::make_shared<ov::opset8::Tanh>(hidden_bias);
+
+        auto output_matmul = std::make_shared<ov::opset8::MatMul>(hidden_activation, Why_const);
+        auto output_add = std::make_shared<ov::opset8::Add>(output_matmul, by_const);
+
+        auto result = std::make_shared<ov::opset8::Result>(output_add);
+        auto function = std::make_shared<ov::Model>(ov::ResultVector{ result }, ov::ParameterVector{ input });
+
+        return function;
     }
 
 private:
-    SemaphoreHandle_t& semaphore_;
+    int input_size, hidden_size, output_size;
+    ActivationFunction activation_func;
+    std::shared_ptr<MatrixXd> Wxh, Whh, Whh2, Why;
+    std::shared_ptr<VectorXd> bh, bh2, by, h;
+
+    // Funkcja pomocnicza do zapisu macierzy
+    void save_matrix(std::ofstream& file, const MatrixXd& matrix) {
+        long rows = static_cast<long>(matrix.rows()); // Dodano rzutowanie
+        long cols = static_cast<long>(matrix.cols()); // Dodano rzutowanie
+        file.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        file.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+        file.write(reinterpret_cast<const char*>(matrix.data()), rows * cols * sizeof(double));
+    }
+
+    // Funkcja pomocnicza do zapisu wektorów
+    void save_vector(std::ofstream& file, const VectorXd& vector) {
+        long size = static_cast<long>(vector.size()); // Dodano rzutowanie
+        file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+        file.write(reinterpret_cast<const char*>(vector.data()), size * sizeof(double));
+    }
+
+    // Funkcja pomocnicza do wczytywania macierzy
+    void load_matrix(std::ifstream& file, MatrixXd& matrix) {
+        long rows, cols;
+        file.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+        file.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+        matrix.resize(rows, cols);
+        file.read(reinterpret_cast<char*>(matrix.data()), rows * cols * sizeof(double));
+    }
+
+    // Funkcja pomocnicza do wczytywania wektorów
+    void load_vector(std::ifstream& file, VectorXd& vector) {
+        long size;
+        file.read(reinterpret_cast<char*>(&size), sizeof(size));
+        vector.resize(size);
+        file.read(reinterpret_cast<char*>(vector.data()), size * sizeof(double));
+    }
 };
 
-SemaphoreHandle_t resourceSemaphore;
-SemaphoreHandle_t eepromSemaphore;
-
-// Definicje funkcji pomocniczych
-float readInputPower() {
-    // Przykładowa implementacja odczytu mocy wejściowej
-    float voltage = analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Odczyt napięcia z pinu A0
-    float current = analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE); // Odczyt prądu z pinu A1
-    return voltage * current; // Moc = napięcie * prąd
-}
-
-void updateObservedPower(float power) {
-    // Przykładowa implementacja aktualizacji obserwowanej mocy
-    Serial.print("Obserwowana moc: ");
-    Serial.println(power);
-}
-void checkAlarm() {
-    // Przykładowa implementacja funkcji checkAlarm
-    Serial.println("Sprawdzanie alarmu...");
-    // Dodaj logikę sprawdzania alarmu tutaj
-}
-
-void autoCalibrate() {
-    // Przykładowa implementacja funkcji autoCalibrate
-    Serial.println("Automatyczna kalibracja...");
-    // Dodaj logikę automatycznej kalibracji tutaj
-}
-
-void energyManagement() {
-    // Przykładowa implementacja funkcji energyManagement
-    Serial.println("Zarządzanie energią...");
-    // Dodaj logikę zarządzania energią tutaj
-}
-
-void someFunction() {
-    SemaphoreGuard guard(resourceSemaphore);
-    // Kod funkcji
-    Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
-
-    // Definicja wektora params
-    std::vector<float> params = { 1.0, 0.1, 0.01 };
-    updateControlParameters(params); // Poprawne wywołanie
-
-    // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
-    float inputPower = readInputPower(); // Odczytaj moc wejściową
-    updateObservedPower(inputPower); // Aktualizuj obserwowaną moc
-}
-
-void updateControlParameters(const std::vector<float>& params);
-
-void someFunction() {
-    SemaphoreGuard guard(resourceSemaphore);
-    // Kod funkcji
-    Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
-
-    // Definicja wektora params
-    std::vector<float> params = { 1.0, 0.1, 0.01 };
-    updateControlParameters(params); // Poprawne wywołanie
-}
-
-
-const int mosfetPin = D4;
-const int excitationBJT1Pin = D8;
-const int excitationBJT2Pin = D9;
-const int bjtPin1 = D5;
-const int bjtPin2 = D6;
-const int bjtPin3 = D7; // Poprawienie brakującego przypisania pinu
-
-
-Adafruit_SH1106 display(OLED_RESET); // Dodanie instancji wyświetlacza
-
-void someFunction() {
-    float state[2] = { 0.5, 0.7 };
-    int discreteState[2];
-
-    // Poprawne wywołanie funkcji
-    discretizeStateAgent3(state, discreteState);
-
-    // Deklaracje funkcji
-    float readVoltage();
-    float readExcitationCurrent();
-    float readBrakingEffect();
-    float lowPassFilter(float currentValue, float previousValue, float alpha);
-    float calibrateVoltage(float rawVoltage);
-    float calibrateCurrent(float rawCurrent);
-    float calibrateBrakingEffect(float rawBrakingEffect);
-    float calculateError(float setpoint, float measuredValue);
-    void updateControlParameters(float params[3]);
-    void handleSerialCommunication();
-    void generateAndImplementFix(String error);
-    void checkVoltage();
-    void checkCurrent();
-    void checkBrakingEffect();
-    void resetVoltageController();
-    void reduceExcitationCurrent();
-    void calibrateBrakingEffect();
-    void logError(String error);
-    void readErrorLog();
-    void detectAnomalies();
-    void handleAnomaly(String anomaly);
-    String predictError(float voltage, float current, float brakingEffect);
-    void addFixFunction(String error, void(*fixFunction)());
-    void defaultFixFunction();
-    void trainModel();
-    String predictWithModel(float voltage, float current, float brakingEffect);
-    void discretizeStateAgent2(float state, int& discreteState);
-    void discretizeStateAgent3(float state[], int discreteState[]);
-}
-
-void detectAnomalies() {
-    // Odczytanie aktualnych wartości
-    float currentVoltage = readVoltage();
-    float currentCurrent = readExcitationCurrent();
-    float currentBrakingEffect = readBrakingEffect();
-
-    // Progi wykrywania anomalii
-    const float voltageThreshold = 240.0; // Przykładowy próg napięcia
-    const float currentThreshold = 30.0;  // Przykładowy próg prądu
-    const float brakingEffectThreshold = 110.0; // Przykładowy próg efektu hamowania
-
-    // Wykrywanie anomalii
-    if (currentVoltage > voltageThreshold) {
-        handleAnomaly("Voltage anomaly detected");
-    }
-    if (currentCurrent > currentThreshold) {
-        handleAnomaly("Current anomaly detected");
-    }
-    if (currentBrakingEffect > brakingEffectThreshold) {
-        handleAnomaly("Braking effect anomaly detected");
-    }
-}
-
-// Przykładowe implementacje funkcji pomocniczych
-float readVoltage() {
-    // Implementacja odczytu napięcia
-    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-float readExcitationCurrent() {
-    // Implementacja odczytu prądu
-    return analogRead(0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-float readBrakingEffect() {
-    // Implementacja odczytu efektu hamowania
-    return analogRead(0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-void handleAnomaly(String anomaly) {
-    // Implementacja obsługi anomalii
-    Serial.println(anomaly);
-    // Dodatkowe działania, np. logowanie, powiadomienia, itp.
-}
-
-
-#define NUM_STATE_BINS_AGENT3 100 // Dodanie brakującej definicji
-
-String predictError(float voltage, float current, float brakingEffect) {
-    // Implementacja funkcji
-    if (voltage > 240.0) {
-        return "Voltage anomaly detected";
-    }
-    else if (current > 30.0) {
-        return "Current anomaly detected";
-    }
-    else if (brakingEffect > 110.0) {
-        return "Braking effect anomaly detected";
-    }
-    return "No anomaly detected";
-}
-
-void addFixFunction(String error, void(*fixFunction)()) {
-    // Implementacja funkcji
-    // Przykładowa mapa przechowująca funkcje naprawcze
-    static std::map<String, void(*)()> fixFunctionMap;
-    fixFunctionMap[error] = fixFunction;
-}
-
-void defaultFixFunction() {
-    // Implementacja funkcji
-    Serial.println("Default fix function executed.");
-}
-
-void trainModel() {
-    // Implementacja funkcji
-    Serial.println("Training model...");
-    // Przykładowa implementacja treningu modelu
-    // Można tu dodać kod do trenowania modelu, np. aktualizacja tablicy Q
-}
-
-String predictWithModel(float voltage, float current, float brakingEffect) {
-    // Implementacja funkcji
-    // Przykładowa predykcja na podstawie modelu
-    if (voltage > 240.0) {
-        return "Voltage anomaly predicted";
-    }
-    else if (current > 30.0) {
-        return "Current anomaly predicted";
-    }
-    else if (brakingEffect > 110.0) {
-        return "Braking effect anomaly predicted";
-    }
-    return "No anomaly predicted";
-}
-
-
-void discretizeStateAgent2(float state, int& discreteState) {
-    // Normalizacja stanu do zakresu [0, 1]
-    float normalizedState = (state - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
-    
-    // Dyskretyzacja stanu
-    discreteState = static_cast<int>(normalizedState * (NUM_STATE_BINS_AGENT2 - 1));
-    
-    // Upewnienie się, że dyskretyzowany stan jest w zakresie
-    if (discreteState < 0) {
-        discreteState = 0;
-    } else if (discreteState >= NUM_STATE_BINS_AGENT2) {
-        discreteState = NUM_STATE_BINS_AGENT2 - 1;
-    }
-}
-
-void discretizeStateAgent3(float state[], int discreteState[]) {
-    // Normalizacja i dyskretyzacja stanu dla agenta 3
-    for (int i = 0; i < 2; ++i) {
-        float normalizedState = (state[i] - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
-        discreteState[i] = static_cast<int>(normalizedState * (NUM_STATE_BINS_AGENT3 - 1));
-        
-        // Upewnienie się, że dyskretyzowany stan jest w zakresie
-        if (discreteState[i] < 0) {
-            discreteState[i] = 0;
-        } else if (discreteState[i] >= NUM_STATE_BINS_AGENT3) {
-            discreteState[i] = NUM_STATE_BINS_AGENT3 - 1;
+// Klasa głębokiej sieci neuronowej
+class DeepNeuralNetwork {
+public:
+    // Konstruktor sieci neuronowej
+    DeepNeuralNetwork(const std::vector<int>& layers, ActivationFunction activation_func)
+        : activation_func(activation_func) {
+        srand(static_cast<unsigned int>(time(0)));
+        for (size_t i = 0; i < layers.size() - 1; ++i) {
+            weights.push_back(Eigen::MatrixXd::Random(layers[i + 1], layers[i]));
+            biases.push_back(Eigen::VectorXd::Random(layers[i + 1]));
         }
     }
-}
 
+    // Getter for weights
+    const AlignedMatrixXd& get_weights() const {
+        return weights;
+    }
 
-struct Agent {
-    int id;
-    int priority;
+    // Getter for biases
+    const AlignedVectorXd& get_biases() const {
+        return biases;
+    }
+
+    // Funkcja trenująca sieć neuronową z regularyzacją L1
+    void train_with_l1_regularization(const AlignedVectorXd& batch_inputs, const AlignedVectorXd& batch_targets, double learning_rate, AdamOptimizer& optimizer, double lambda) {
+        AlignedMatrixXd weight_gradients(weights.size());
+        AlignedVectorXd bias_gradients(biases.size());
+
+        for (size_t i = 0; i < weights.size(); ++i) {
+            weight_gradients[i] = Eigen::MatrixXd::Zero(weights[i].rows(), weights[i].cols());
+            bias_gradients[i] = Eigen::VectorXd::Zero(biases[i].size());
+        }
+
+        for (size_t b = 0; b < batch_inputs.size(); ++b) {
+            if (b >= batch_inputs.size() || b >= batch_targets.size()) {
+                std::wstringstream ws;
+                ws << L"Indeks poza zakresem w batch_inputs lub batch_targets: " << b << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                continue;
+            }
+
+            std::vector<Eigen::VectorXd> activations = feedforward(batch_inputs[b]);
+            Eigen::VectorXd output_errors = batch_targets[b] - activations.back();
+
+            for (int i = static_cast<int>(weights.size()) - 1; i >= 0; --i) {
+                if (i >= activations.size()) {
+                    std::wstringstream ws;
+                    ws << L"Indeks poza zakresem w activations: " << i << std::endl;
+                    LogErrorToEditControl(hwndErrorEdit, ws.str());
+                    continue;
+                }
+
+                Eigen::VectorXd delta = output_errors.cwiseProduct(activations[i + 1].unaryExpr(get_activation_derivative(activation_func)));
+                weight_gradients[i] += delta * activations[i].transpose();
+                bias_gradients[i] += delta;
+                if (i > 0) {
+                    output_errors = weights[i].transpose() * output_errors;
+                }
+            }
+        }
+
+        for (size_t i = 0; i < weights.size(); ++i) {
+            weight_gradients[i] /= static_cast<double>(batch_inputs.size());
+            bias_gradients[i] /= static_cast<double>(batch_inputs.size());
+            weight_gradients[i] += lambda * weights[i].array().sign().matrix(); // Dodanie regularyzacji L1
+        }
+
+        optimizer.update(weights, weight_gradients);
+        for (size_t i = 0; i < biases.size(); ++i) {
+            biases[i] -= learning_rate * bias_gradients[i];
+        }
+    }
+
+    // Funkcja trenująca sieć neuronową z regularyzacją L2
+    void train_with_l2_regularization(const AlignedVectorXd& batch_inputs, const AlignedVectorXd& batch_targets, double learning_rate, AdamOptimizer& optimizer, double lambda) {
+        AlignedMatrixXd weight_gradients(weights.size());
+        AlignedVectorXd bias_gradients(biases.size());
+
+        for (size_t i = 0; i < weights.size(); ++i) {
+            weight_gradients[i] = Eigen::MatrixXd::Zero(weights[i].rows(), weights[i].cols());
+            bias_gradients[i] = Eigen::VectorXd::Zero(biases[i].size());
+        }
+
+        for (size_t b = 0; b < batch_inputs.size(); ++b) {
+            if (b >= batch_inputs.size() || b >= batch_targets.size()) {
+                std::wstringstream ws;
+                ws << L"Indeks poza zakresem w batch_inputs lub batch_targets: " << b << std::endl;
+                LogErrorToEditControl(hwndErrorEdit, ws.str());
+                continue;
+            }
+
+            std::vector<Eigen::VectorXd> activations = feedforward(batch_inputs[b]);
+            Eigen::VectorXd output_errors = batch_targets[b] - activations.back();
+
+            for (int i = static_cast<int>(weights.size()) - 1; i >= 0; --i) {
+                if (i >= activations.size()) {
+                    std::wstringstream ws;
+                    ws << L"Indeks poza zakresem w activations: " << i << std::endl;
+                    LogErrorToEditControl(hwndErrorEdit, ws.str());
+                    continue;
+                }
+
+                Eigen::VectorXd delta = output_errors.cwiseProduct(activations[i + 1].unaryExpr(get_activation_derivative(activation_func)));
+                weight_gradients[i] += delta * activations[i].transpose();
+                bias_gradients[i] += delta;
+                if (i > 0) {
+                    output_errors = weights[i].transpose() * output_errors;
+                }
+            }
+        }
+
+        for (size_t i = 0; i < weights.size(); ++i) {
+            weight_gradients[i] /= static_cast<double>(batch_inputs.size());
+            bias_gradients[i] /= static_cast<double>(batch_inputs.size());
+            weight_gradients[i] += lambda * weights[i]; // Dodanie regularyzacji L2
+        }
+
+        optimizer.update(weights, weight_gradients);
+        for (size_t i = 0; i < biases.size(); ++i) {
+            biases[i] -= learning_rate * bias_gradients[i];
+        }
+    }
+
+   
+    // Funkcja trenująca sieć neuronową z wczesnym zatrzymaniem
+    void train_with_early_stopping(const AlignedVectorXd& train_inputs, const AlignedVectorXd& train_targets,
+        const AlignedVectorXd& val_inputs, const AlignedVectorXd& val_targets,
+        double learning_rate, AdamOptimizer& optimizer, double lambda,
+        int max_epochs, int patience) {
+        int epochs_no_improve = 0;
+        double best_val_loss = std::numeric_limits<double>::infinity();
+
+        for (int epoch = 0; epoch < max_epochs; ++epoch) {
+            // Trening na zbiorze treningowym z regularyzacją L1
+            train_with_l1_regularization(train_inputs, train_targets, learning_rate, optimizer, lambda);
+
+            // Trening na zbiorze treningowym z regularyzacją L2
+            train_with_l2_regularization(train_inputs, train_targets, learning_rate, optimizer, lambda);
+
+            // Obliczanie straty na zbiorze walidacyjnym
+            double val_loss = compute_loss(val_inputs, val_targets);
+
+            std::wstringstream ws;
+            ws << L"Epoch " << epoch + 1 << L", Validation Loss: " << val_loss << std::endl;
+            LogToEditControl(hwndErrorEdit, ws.str());
+
+            // Sprawdzanie, czy strata na zbiorze walidacyjnym się poprawiła
+            if (val_loss < best_val_loss) {
+                best_val_loss = val_loss;
+                epochs_no_improve = 0;
+            }
+            else {
+                epochs_no_improve++;
+            }
+
+            // Sprawdzanie, czy należy zatrzymać trening
+            if (epochs_no_improve >= patience) {
+                ws.str(L"");
+                ws << L"Early stopping at epoch " << epoch + 1 << std::endl;
+                LogToEditControl(hwndErrorEdit, ws.str());
+                break;
+            }
+        }
+    }
+
+private:
+    AlignedMatrixXd weights; // Wagi sieci
+    AlignedVectorXd biases; // Biasy sieci
+    ActivationFunction activation_func; // Funkcja aktywacji
+
+    // Funkcja propagacji w przód
+    std::vector<Eigen::VectorXd> feedforward(const Eigen::VectorXd& inputs) {
+        std::vector<Eigen::VectorXd> activations;
+        activations.push_back(inputs);
+        for (size_t i = 0; i < weights.size(); ++i) {
+            Eigen::VectorXd z = weights[i] * activations.back() + biases[i];
+            activations.push_back(z.unaryExpr(get_activation_function(activation_func)));
+        }
+        return activations;
+    }
+
+    // Funkcja obliczająca stratę
+    double compute_loss(const AlignedVectorXd& inputs, const AlignedVectorXd& targets) {
+        double loss = 0.0;
+        for (size_t i = 0; i < inputs.size(); ++i) {
+            Eigen::VectorXd output = feedforward(inputs[i]).back();
+            loss += (targets[i] - output).squaredNorm();
+        }
+        return loss / inputs.size();
+    }
 };
 
-void agentTask(void* pvParameters) {
-    Agent* agent = static_cast<Agent*>(pvParameters);
-    while (true) {
-        // Kod wykonywany przez agenta
-        Serial.print("Agent ID: ");
-        Serial.println(agent->id);
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Opóźnienie 1 sekundy
+// Funkcja dzieląca dane na zbiory treningowy, walidacyjny i testowy
+void split_data(const AlignedVectorXd& inputs, const AlignedVectorXd& targets,
+    AlignedVectorXd& train_inputs, AlignedVectorXd& train_targets,
+    AlignedVectorXd& val_inputs, AlignedVectorXd& val_targets,
+    AlignedVectorXd& test_inputs, AlignedVectorXd& test_targets) {
+    size_t total_size = inputs.size();
+    double train_ratio = 0.7;
+    double val_ratio = 0.15;
+    if (total_size > 1000) {
+        train_ratio = 0.6;
+        val_ratio = 0.2;
     }
-}
+    size_t train_size = static_cast<size_t>(total_size * train_ratio);
+    size_t val_size = static_cast<size_t>(total_size * val_ratio);
 
-void createAgentTasks() {
-    // Przykładowa lista agentów
-    Agent agents[] = {
-        {1, 1},
-        {2, 2},
-        {3, 3}
-    };
+    std::vector<size_t> indices(total_size);
+    std::iota(indices.begin(), indices.end(), 0);
 
-    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); ++i) {
-        xTaskCreate(
-            agentTask,                // Funkcja zadania
-            "AgentTask",              // Nazwa zadania
-            1024,                     // Stos zadania
-            &agents[i],               // Parametry zadania
-            agents[i].priority,       // Priorytet zadania
-            NULL                      // Uchwyt zadania
-        );
-    }
-}
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(indices.begin(), indices.end(), g);
 
-
-
-void adjustMinInputPower(float inputPower) {
-    static float minObservedPower = 1e-6;
-    static float maxObservedPower = 1e-3;
-
-    if (inputPower < minObservedPower) {
-        minObservedPower = inputPower;
-    }
-    if (inputPower > maxObservedPower) {
-        maxObservedPower = inputPower;
+    for (size_t i = 0; i < train_size; ++i) {
+        train_inputs.push_back(inputs[indices[i]]);
+        train_targets.push_back(targets[indices[i]]);
     }
 
-    float threshold = (minObservedPower + maxObservedPower) / 2;
-
-    Serial.print("Min Observed Power: ");
-    Serial.println(minObservedPower);
-    Serial.print("Max Observed Power: ");
-    Serial.println(maxObservedPower);
-    Serial.print("Current Threshold: ");
-    Serial.println(threshold);
-}
-
-void decreasePriority(Agent& agent) {
-    if (agent.priority > 0) {
-        agent.priority--;
+    for (size_t i = train_size; i < train_size + val_size; ++i) {
+        val_inputs.push_back(inputs[indices[i]]);
+        val_targets.push_back(targets[indices[i]]);
     }
-}
 
-void increasePriority(Agent& agent) {
-    if (millis() - agent.lastAccessTime > maxWaitTime) {
-        agent.priority++;
+    for (size_t i = train_size + val_size; i < total_size; ++i) {
+        test_inputs.push_back(inputs[indices[i]]);
+        test_targets.push_back(targets[indices[i]]);
     }
+
+
+    // Przykład zastąpienia std::cout funkcją LogToEditControl
+    std::wstringstream ws;
+    ws << L"Podział danych zakończony. Całkowity rozmiar: " << total_size << L", Rozmiar treningowy: " << train_size << L", Rozmiar walidacyjny: " << val_size << L", Rozmiar testowy: " << (total_size - train_size - val_size) << L"\n";
+    LogToEditControl(hwndErrorEdit, ws.str());
 }
 
 
 
+void load_cnn_model(const std::string& model_xml_path, const std::string& model_bin_path, ov::Core& core, std::shared_ptr<ov::Model>& model) {
+    try {
+        model = core.read_model(model_xml_path, model_bin_path);
+        std::wstringstream ws;
+        ws << L"Model CNN pomyślnie wczytany z " << std::wstring(model_xml_path.begin(), model_xml_path.end()) << L" i " << std::wstring(model_bin_path.begin(), model_bin_path.end()) << L"\n";
+        LogToEditControl(hwndErrorEdit, ws.str());
+    }
+    catch (const ov::Exception& e) {
+        std::wstringstream ws;
+        ws << L"Wyjątek OpenVINO podczas wczytywania modelu: " << std::wstring(e.what(), e.what() + strlen(e.what())) << L"\n";
+        updateErrorEditText(hwndErrorEdit, ws.str());
+    }
+    catch (const std::exception& e) {
+        std::wstringstream ws;
+        ws << L"Standardowy wyjątek podczas wczytywania modelu: " << std::wstring(e.what(), e.what() + strlen(e.what())) << L"\n";
+        updateErrorEditText(hwndErrorEdit, ws.str());
+    }
+    catch (...) {
+        updateErrorEditText(hwndErrorEdit, L"Nieznany wyjątek podczas wczytywania modelu\n");
+    }
+}
 
-void performAgentOperation(int agentId) {
-    // Znajdowanie agenta na podstawie jego ID
-    Agent* agent = nullptr;
-    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-        if (agents[i].id == agentId) {
-            agent = &agents[i];
-            break;
+void run_cnn_inference(const std::shared_ptr<ov::Model>& model, const std::vector<float>& input_data, std::vector<float>& output_data) {
+    try {
+        ov::Core core;
+        ov::CompiledModel compiled_model = core.compile_model(model, "AUTO");
+        ov::InferRequest infer_request = compiled_model.create_infer_request();
+
+        const ov::Output<const ov::Node>& input_node = model->input();
+        ov::Tensor input_tensor = infer_request.get_tensor(input_node);
+        std::memcpy(input_tensor.data<float>(), input_data.data(), input_data.size() * sizeof(float));
+
+        infer_request.infer();
+
+        const ov::Output<const ov::Node>& output_node = model->output();
+        ov::Tensor output_tensor = infer_request.get_tensor(output_node);
+        output_data.resize(output_tensor.get_size());
+        std::memcpy(output_data.data(), output_tensor.data<float>(), output_tensor.get_size() * sizeof(float));
+    }
+    catch (const ov::Exception& e) {
+        std::wstringstream ws;
+        ws << L"Wyjątek OpenVINO podczas inferencji: " << std::wstring(e.what(), e.what() + strlen(e.what())) << L"\n";
+        updateErrorEditText(hwndErrorEdit, ws.str());
+    }
+    catch (const std::exception& e) {
+        std::wstringstream ws;
+        ws << L"Standardowy wyjątek podczas inferencji: " << std::wstring(e.what(), e.what() + strlen(e.what())) << L"\n";
+        updateErrorEditText(hwndErrorEdit, ws.str());
+    }
+    catch (...) {
+        updateErrorEditText(hwndErrorEdit, L"Nieznany wyjątek podczas inferencji\n");
+    }
+}
+
+
+void optimize_model_with_openvino(const std::string& model_xml_path, const std::string& model_bin_path) {
+    try {
+        ov::Core core;
+        std::shared_ptr<ov::Model> model = core.read_model(model_xml_path, model_bin_path);
+        ov::pass::Manager manager;
+        manager.register_pass<ov::pass::LowLatency2>();
+        manager.register_pass<ov::pass::Serialize>(model_xml_path, model_bin_path);
+        manager.run_passes(model);
+        std::wstringstream ws;
+        ws << L"Model został zoptymalizowany przy użyciu OpenVINO.\n";
+        LogToEditControl(hwndErrorEdit, ws.str());
+    }
+    catch (const ov::Exception& e) {
+        std::wstringstream ws;
+        ws << L"Wyjątek OpenVINO podczas optymalizacji modelu: " << std::wstring(e.what(), e.what() + strlen(e.what())) << L"\n";
+        updateErrorEditText(hwndErrorEdit, ws.str());
+    }
+    catch (const std::exception& e) {
+        std::wstringstream ws;
+        ws << L"Standardowy wyjątek podczas optymalizacji modelu: " << std::wstring(e.what(), e.what() + strlen(e.what())) << L"\n";
+        updateErrorEditText(hwndErrorEdit, ws.str());
+    }
+    catch (...) {
+        updateErrorEditText(hwndErrorEdit, L"Nieznany wyjątek podczas optymalizacji modelu\n");
+    }
+}
+
+
+
+void matrix_multiply_avx2(const std::vector<float>& A, const std::vector<float>& B, std::vector<float>& C, int N) {
+    if (A.size() < N * N || B.size() < N * N || C.size() < N * N) {
+        std::cerr << "Rozmiar wektorów A, B lub C jest nieprawidłowy.\n";
+        return;
+    }
+
+    auto is_aligned = [](const void* ptr) {
+        return reinterpret_cast<uintptr_t>(ptr) % 32 == 0;
+        };
+
+    if (!is_aligned(A.data()) || !is_aligned(B.data()) || !is_aligned(C.data())) {
+        std::cerr << "Dane nie są wyrównane do 32 bajtów!\n";
+        return;
+    }
+
+    for (int i = 0; i < N; i += 8) {
+        for (int j = 0; j < N; j++) {
+            __m256 c = _mm256_setzero_ps();
+            for (int k = 0; k < N; k++) {
+                __m256 a = _mm256_load_ps(&A[i * N + k * 8]);
+                __m256 b = _mm256_set1_ps(B[k * N + j]);
+                c = _mm256_fmadd_ps(a, b, c);
+            }
+            _mm256_store_ps(&C[i * N + j * 8], c);
         }
     }
 
-    void performAgentOperation(int agentId) {
-        Agent* agent = &agents[agentId - 1]; // Pobranie wskaźnika do agenta
-        if (agent != nullptr) {
-            // Przykładowa operacja na agencie
-            agent->waitCount = 0;
-            agent->waitTime = 0;
-            agent->lastAccessTime = millis();
-            agent->targetVoltage = VOLTAGE_SETPOINT;
-
-            // Wyświetlanie informacji o alokacji zasobów
-            Serial.print("Allocating resources to agent ");
-            Serial.println(agent->id);
-        }
-    }
-
-void allocateResources() {
-    std::priority_queue<std::pair<int, int>> pq;
-
-    // Dodawanie agentów do kolejki priorytetowej na podstawie ich priorytetu
-    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-        pq.push({ agents[i].priority, agents[i].id });
-        Serial.print("Agent ");
-        Serial.print(agents[i].id);
-        Serial.print(" z priorytetem ");
-        Serial.println(agents[i].priority);
-    }
-
-    // Alokacja zasobów na podstawie priorytetu
-    while (!pq.empty()) {
-        int agentId = pq.top().second;
-        pq.pop();
-
-        // Próba uzyskania dostępu do zasobów za pomocą semafora
-        if (xSemaphoreTake(resourceSemaphore, portMAX_DELAY) == pdTRUE) {
-            performAgentOperation(agentId);
-            xSemaphoreGive(resourceSemaphore);
+    // Obsługa przypadków, gdy N nie jest wielokrotnością 8
+    int remainder = N % 8;
+    if (remainder != 0) {
+        for (int i = N - remainder; i < N; ++i) {
+            for (int j = 0; j < N; ++j) {
+                float c = 0.0f;
+                for (int k = 0; k < N; ++k) {
+                    c += A[i * N + k] * B[k * N + j];
+                }
+                C[i * N + j] = c;
+            }
         }
     }
 }
 
-void adjustMinInputPower(float inputPower); // Prototyp funkcji
 
-// Definicje innych funkcji i zmiennych
 
-void adjustMinInputPower(float inputPower) {
-    static float minObservedPower = 1e-6;
-    static float maxObservedPower = 1e-3;
+void convert_to_openvino_ir(const DeepNeuralNetwork& nn, const std::string& xml_path, const std::string& bin_path) {
+    // Tworzenie modelu OpenVINO
+    auto input = std::make_shared<ov::opset8::Parameter>(ov::element::f32, ov::Shape{ 1, static_cast<size_t>(nn.get_weights()[0].cols()) });
+    std::shared_ptr<ov::Node> current = input;
 
-    if (inputPower < minObservedPower) {
-        minObservedPower = inputPower;
+    // Dodawanie warstw do modelu
+    for (size_t i = 0; i < nn.get_weights().size(); ++i) {
+        auto weights = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ static_cast<size_t>(nn.get_weights()[i].rows()), static_cast<size_t>(nn.get_weights()[i].cols()) }, nn.get_weights()[i].data());
+        auto biases = std::make_shared<ov::opset8::Constant>(ov::element::f32, ov::Shape{ 1, static_cast<size_t>(nn.get_weights()[i].rows()) }, nn.get_biases()[i].data());
+
+        // Sprawdzenie zgodności wymiarów do mnożenia macierzy
+        if (current->get_shape().back() != weights->get_shape().back()) {
+            throw std::runtime_error("Niezgodność wymiarów: Nie można mnożyć macierzy o niezgodnych wymiarach.");
+        }
+
+        // Debug: Wypisanie wymiarów macierzy
+        std::wstringstream ws;
+        ws << L"Warstwa " << i << L":" << std::endl;
+        ws << L"  Aktualny kształt: " << ov::util::to_string(current->get_shape()).c_str() << std::endl;
+        ws << L"  Kształt wag: " << ov::util::to_string(weights->get_shape()).c_str() << std::endl;
+        LogToEditControl(hwndErrorEdit, ws.str());
+
+        auto matmul = std::make_shared<ov::opset8::MatMul>(current, weights, false, true);
+        auto add = std::make_shared<ov::opset8::Add>(matmul, biases);
+        current = std::make_shared<ov::opset8::Relu>(add); // Zakładamy aktywację ReLU dla uproszczenia
     }
-    if (inputPower > maxObservedPower) {
-        maxObservedPower = inputPower;
-    }
 
-    float threshold = (minObservedPower + maxObservedPower) / 2;
+    // Tworzenie funkcji OpenVINO
+    auto result = std::make_shared<ov::opset8::Result>(current);
+    auto function = std::make_shared<ov::Model>(ov::ResultVector{ result }, ov::ParameterVector{ input });
 
-    Serial.print("Min Observed Power: ");
-    Serial.println(minObservedPower);
-    Serial.print("Max Observed Power: ");
-    Serial.println(maxObservedPower);
-    Serial.print("Current Threshold: ");
-    Serial.println(threshold);
+    // Serializacja modelu do plików XML i BIN
+    ov::serialize(function, xml_path, bin_path);
 }
 
 
-float readVoltage() {
-    float calibratedVoltage = 0.0;
-    if (resourceSemaphore == NULL) {
-        Serial.println("Error: resourceSemaphore is not initialized");
-        return calibratedVoltage;
+
+
+void train_with_npu(std::shared_ptr<RecurrentNeuralNetwork> rnn, const vector<VectorXd>& inputs, const vector<VectorXd>& targets, double learning_rate, int epochs, HWND hwnd) {
+    if (inputs.size() != targets.size()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Rozmiary inputs i targets są niezgodne.\n");
+        return;
     }
 
-    if (xSemaphoreTake(resourceSemaphore, portMAX_DELAY) == pdTRUE) {
-        int rawValue = analogRead(A0);
-        if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
-            Serial.println("Błąd: Nieprawidłowa wartość odczytu ADC");
+    std::thread npu_thread([=]() {
+        for (int epoch = 0; epoch < epochs; ++epoch) {
+            std::vector<std::future<void>> futures;
+            for (size_t i = 0; i < inputs.size(); ++i) {
+                futures.push_back(std::async(std::launch::async, [&, i]() {
+                    try {
+                        std::lock_guard<std::mutex> lock(model_mutex); // Dodaj blokadę mutexu
+
+                        if (inputs[i].size() != rnn->get_input_size()) {
+                            LogErrorToEditControl(hwndErrorEdit, L"Rozmiar wejścia jest niezgodny z oczekiwanym rozmiarem sieci.\n");
+                            return;
+                        }
+
+                        if (targets[i].size() != rnn->get_output_size()) {
+                            LogErrorToEditControl(hwndErrorEdit, L"Rozmiar celu jest niezgodny z oczekiwanym rozmiarem wyjścia sieci.\n");
+                            return;
+                        }
+
+                        // Przenieś obliczenia na NPU
+                        std::vector<float> input_data(inputs[i].data(), inputs[i].data() + inputs[i].size());
+                        std::vector<float> output_data;
+                        run_cnn_inference(rnn->get_model(), input_data, output_data);
+
+                        // Poprawione wywołanie Eigen::Map
+                        Eigen::Map<Eigen::VectorXf> output(output_data.data(), output_data.size());
+                        VectorXd reward = targets[i] - output.cast<double>();
+
+                        if (reward.size() != rnn->get_output_size()) {
+                            LogErrorToEditControl(hwndErrorEdit, L"Rozmiar reward jest niezgodny z oczekiwanym rozmiarem wyjścia sieci.\n");
+                            return;
+                        }
+
+                        rnn->train({ inputs[i] }, { reward }, learning_rate);
+
+                        double loss = reward.squaredNorm();
+                        double accuracy = (reward.array().abs() < 0.5).cast<double>().mean();
+                        AddDataPoint(loss, accuracy);
+                    }
+                    catch (const std::invalid_argument& e) {
+                        std::wstringstream ws;
+                        ws << L"Wyjątek std::invalid_argument: " << e.what() << std::endl;
+                        LogErrorToEditControl(hwndErrorEdit, ws.str());
+                    }
+                    catch (const std::exception& e) {
+                        std::wstringstream ws;
+                        ws << L"Standardowy wyjątek: " << e.what() << std::endl;
+                        LogErrorToEditControl(hwndErrorEdit, ws.str());
+                    }
+                    catch (...) {
+                        LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek.\n");
+                    }
+                    }));
+            }
+
+            for (auto& future : futures) {
+                future.get();
+            }
+
+            std::wstringstream ws;
+            ws << L"Epoch " << epoch + 1 << L" completed.\n";
+            LogToEditControl(hwndErrorEdit, ws.str());
+
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (IsWindow(hwnd)) {
+                    PostMessage(hwnd, WM_USER + 1, static_cast<WPARAM>(epoch + 1), 0);
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(cv_mtx);
+                if (!training_in_progress) {
+                    LogToEditControl(hwndErrorEdit, L"Trening przerwany.\n");
+                    return;
+                }
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            if (IsWindow(hwnd)) {
+                PostMessage(hwnd, WM_USER + 2, 0, 0);
+            }
+        }
+        });
+
+    npu_thread.detach();
+}
+
+
+void LoadAndDisplaylangAnalyzerCResults(HWND hwndErrorEdit) {
+    std::ifstream file("clang_analyzer_results.txt");
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku clang_analyzer_results.txt.\n");
+        return;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string results = buffer.str();
+    file.close();
+
+    std::wstring wresults;
+    std::istringstream iss(results);
+    std::string line;
+    std::regex error_regex(R"((.*):(\d+):(\d+): (warning|error|note): (.*))");
+    std::smatch match;
+
+    CHARFORMAT2 cf;
+    cf.cbSize = sizeof(CHARFORMAT2);
+    cf.dwMask = CFM_COLOR;
+    cf.dwEffects = 0;
+
+    while (std::getline(iss, line)) {
+        if (std::regex_match(line, match, error_regex)) {
+            std::string file = match[1];
+            std::string line_number = match[2];
+            std::string column_number = match[3];
+            std::string type = match[4];
+            std::string message = match[5];
+
+            std::wstring wline = std::wstring(line.begin(), line.end());
+            std::wstring wfile = std::wstring(file.begin(), file.end());
+            std::wstring wline_number = std::wstring(line_number.begin(), line_number.end());
+            std::wstring wcolumn_number = std::wstring(column_number.begin(), column_number.end());
+            std::wstring wtype = std::wstring(type.begin(), type.end());
+            std::wstring wmessage = std::wstring(message.begin(), message.end());
+
+            if (type == "warning") {
+                cf.crTextColor = RGB(255, 165, 0);
+                SendMessage(hwndErrorEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+                wresults += L"⚠️ Ostrzeżenie: " + wfile + L":" + wline_number + L":" + wcolumn_number + L" - " + wmessage + L"\n";
+            }
+            else if (type == "error") {
+                cf.crTextColor = RGB(255, 0, 0);
+                SendMessage(hwndErrorEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+                wresults += L"❌ Błąd: " + wfile + L":" + wline_number + L":" + wcolumn_number + L" - " + wmessage + L"\n";
+            }
+            else if (type == "note") {
+                cf.crTextColor = RGB(0, 0, 255);
+                SendMessage(hwndErrorEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+                wresults += L"ℹ️ Notatka: " + wfile + L":" + wline_number + L":" + wcolumn_number + L" - " + wmessage + L"\n";
+            }
         }
         else {
-            calibratedVoltage = calibrateVoltage(rawValue);
+            wresults += std::wstring(line.begin(), line.end()) + L"\n";
         }
-        xSemaphoreGive(resourceSemaphore);
+    }
+
+    SetWindowTextW(hwndErrorEdit, wresults.c_str());
+}
+
+
+void runClangStaticAnalyzer() {
+    std::lock_guard<std::mutex> lock(clang_mutex); // Dodaj blokadę mutexu
+
+    std::string command = "clang --analyze -Xanalyzer -analyzer-output=text "
+        "-Xanalyzer -analyzer-checker=core "
+        "-Xanalyzer -analyzer-checker=deadcode "
+        "-Xanalyzer -analyzer-checker=security "
+        "-Xanalyzer -analyzer-checker=optin.cplusplus.VirtualCall "
+        "-Xanalyzer -analyzer-checker=core.NullDereference "
+        "-Xanalyzer -analyzer-checker=core.DivideZero "
+        "-Xanalyzer -analyzer-checker=core.StackAddressEscape "
+        "-Xanalyzer -analyzer-checker=core.UndefinedBinaryOperatorResult "
+        "-Xanalyzer -analyzer-checker=core.CallAndMessage "
+        "-Xanalyzer -analyzer-checker=core.NonNullParamChecker "
+        "-Xanalyzer -analyzer-checker=core.builtin.NoReturnFunctions "
+        "-Xanalyzer -analyzer-checker=core.builtin.BuiltinFunctions "
+        "-I C:/Users/MOREK/source/repos/WindowsProject1/vcpkg/installed/x64-windows/include/eigen3 "
+        "-I C:/Users/MOREK/source/repos/WindowsProject1/vcpkg/installed/x64-windows/include "
+        "C:/Users/MOREK/source/repos/WindowsProject1/WindowsProject1/*.cpp -v 2> clang_analyzer_results.txt";
+    std::system(command.c_str());
+}
+
+
+
+
+// Inicjalizacja RichEdit
+void InitializeRichEdit() {
+    LoadLibrary(TEXT("Msftedit.dll"));
+}
+void LoadAndDisplayClangAnalyzerResults(HWND hwndErrorEdit) {
+    std::ifstream file("clang_analyzer_results.txt");
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku clang_analyzer_results.txt.\n");
+        return;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string results = buffer.str();
+    file.close();
+
+    std::wstring wresults;
+    std::istringstream iss(results);
+    std::string line;
+    std::regex error_regex(R"((.*):(\d+):(\d+): (warning|error|note): (.*))");
+    std::smatch match;
+
+    CHARFORMAT2 cf;
+    cf.cbSize = sizeof(CHARFORMAT2);
+    cf.dwMask = CFM_COLOR;
+    cf.dwEffects = 0;
+
+    while (std::getline(iss, line)) {
+        if (std::regex_match(line, match, error_regex)) {
+            std::string file = match[1];
+            std::string line_number = match[2];
+            std::string column_number = match[3];
+            std::string type = match[4];
+            std::string message = match[5];
+
+            std::wstring wline = std::wstring(line.begin(), line.end());
+            std::wstring wfile = std::wstring(file.begin(), file.end());
+            std::wstring wline_number = std::wstring(line_number.begin(), line_number.end());
+            std::wstring wcolumn_number = std::wstring(column_number.begin(), column_number.end());
+            std::wstring wtype = std::wstring(type.begin(), type.end());
+            std::wstring wmessage = std::wstring(message.begin(), message.end());
+
+            if (type == "warning") {
+                cf.crTextColor = RGB(255, 165, 0);
+                SendMessage(hwndErrorEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+                wresults += L"⚠️ Ostrzeżenie: " + wfile + L":" + wline_number + L":" + wcolumn_number + L" - " + wmessage + L"\n";
+            }
+            else if (type == "error") {
+                cf.crTextColor = RGB(255, 0, 0);
+                SendMessage(hwndErrorEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+                wresults += L"❌ Błąd: " + wfile + L":" + wline_number + L":" + wcolumn_number + L" - " + wmessage + L"\n";
+            }
+            else if (type == "note") {
+                cf.crTextColor = RGB(0, 0, 255);
+                SendMessage(hwndErrorEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+                wresults += L"ℹ️ Notatka: " + wfile + L":" + wline_number + L":" + wcolumn_number + L" - " + wmessage + L"\n";
+            }
+        }
+        else {
+            wresults += std::wstring(line.begin(), line.end()) + L"\n";
+        }
+    }
+
+    SetWindowTextW(hwndErrorEdit, wresults.c_str());
+}
+
+
+
+// Funkcja do aktualizacji kontrolki hwndEdit
+void updateEditText(HWND hwndEdit, const std::string& text) {
+    std::wstring wtext = StringToWideString(text);
+    {
+        std::lock_guard<std::mutex> lock(editTextMutex);
+        SetWindowTextW(hwndEdit, wtext.c_str());
+    }
+}
+
+void someFunctionThatModifiesCode() {
+    std::string modifiedCode = "Nowy kod źródłowy";
+
+    {
+        std::lock_guard<std::mutex> lock(codeMutex);
+        kod_zrodlowy = modifiedCode;
+        kod_zmieniony = true;
+    }
+
+    // Aktualizacja kontrolki hwndEdit
+    updateEditText(hwndEdit, modifiedCode);
+}
+
+void monitorCodeChanges() {
+    std::string poprzedni_kod;
+    while (true) {
+        bool zmieniony = false;
+        {
+            std::lock_guard<std::mutex> lock(codeMutex);
+            if (kod_zrodlowy != poprzedni_kod) {
+                kod_zmieniony = true;
+                poprzedni_kod = kod_zrodlowy;
+                zmieniony = true;
+            }
+        }
+        if (zmieniony) {
+            kod_zmieniony = false;
+            updateEditText(hwndEdit, poprzedni_kod);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Sprawdź co 100 ms
+    }
+}
+
+void initializeMonitoring() {
+    std::thread monitorThread(monitorCodeChanges);
+    monitorThread.detach();
+}
+
+
+
+
+
+
+
+// Struktura przechowująca propozycję zmiany
+// Struktura przechowująca propozycję zmiany
+struct ChangeProposal {
+    std::string original_code;
+    std::string modified_code;
+    std::unique_ptr<double> confidence_level;
+    std::string description;
+
+    // Konstruktor domyślny inicjalizujący zmienne składowe
+    ChangeProposal()
+        : original_code(""), modified_code(""), confidence_level(std::make_unique<double>(0.0)), description("") {
+    }
+
+    // Konstruktor przyjmujący argumenty do inicjalizacji zmiennych składowych
+    ChangeProposal(const std::string& original, const std::string& modified, double confidence, const std::string& desc)
+        : original_code(original), modified_code(modified), confidence_level(std::make_unique<double>(confidence)), description(desc) {
+    }
+
+    // Konstruktor kopiujący
+    ChangeProposal(const ChangeProposal& other)
+        : original_code(other.original_code), modified_code(other.modified_code), confidence_level(std::make_unique<double>(*other.confidence_level)), description(other.description) {
+    }
+
+    // Operator przypisania kopiującego
+    ChangeProposal& operator=(const ChangeProposal& other) {
+        if (this == &other) return *this;
+        original_code = other.original_code;
+        modified_code = other.modified_code;
+        confidence_level = std::make_unique<double>(*other.confidence_level);
+        description = other.description;
+        return *this;
+    }
+
+    // Konstruktor przenoszący
+    ChangeProposal(ChangeProposal&& other) noexcept
+        : original_code(std::move(other.original_code)), modified_code(std::move(other.modified_code)), confidence_level(std::move(other.confidence_level)), description(std::move(other.description)) {
+    }
+
+    // Operator przypisania przenoszącego
+    ChangeProposal& operator=(ChangeProposal&& other) noexcept {
+        if (this == &other) return *this;
+        original_code = std::move(other.original_code);
+        modified_code = std::move(other.modified_code);
+        confidence_level = std::move(other.confidence_level);
+        description = std::move(other.description);
+        return *this;
+    }
+};
+
+
+// Funkcja uruchamiająca testy jednostkowe
+bool runUnitTests() {
+    std::string command = "ctest --output-on-failure";
+    int result = std::system(command.c_str());
+    return result == 0;
+}
+
+// Funkcja uruchamiająca analizę statyczną za pomocą clang-tidy
+bool runStaticAnalysis(const std::string& code) {
+    std::ofstream file("temp_code.cpp");
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu kodu.\n");
+        return false;
+    }
+    file << code;
+    file.close();
+
+    std::string command = "clang-tidy temp_code.cpp -- -std=c++17";
+    int result = std::system(command.c_str());
+    std::remove("temp_code.cpp");
+    return result == 0;
+}
+
+
+
+// Funkcja do obliczania poziomu pewności na podstawie wyników testów i analiz
+double calculateConfidenceLevel(const std::string& modified_code) {
+    double confidence = 0.0;
+    int total_checks = 0;
+
+    // Analiza statyczna
+    if (runStaticAnalysis(modified_code)) {
+        confidence += 20.0; // Przykładowa wartość
+    }
+    total_checks += 20;
+
+    // Testy jednostkowe
+    if (runUnitTests()) {
+        confidence += 30.0; // Przykładowa wartość
+    }
+    total_checks += 30;
+
+    // Testy logiczne
+    double logical_test_coverage = run_logical_tests(modified_code);
+    confidence += logical_test_coverage * 50.0; // Przykładowa wartość
+    total_checks += 50;
+
+    // Obliczanie końcowego poziomu pewności
+    return (confidence / total_checks) * 100.0;
+}
+
+// Funkcja generująca propozycję zmiany
+ChangeProposal generateChangeProposal(const std::string& original_code) {
+    ChangeProposal proposal;
+    proposal.original_code = original_code;
+    proposal.modified_code = "for (int index = 0; index < 10; ++index)"; // Przykładowa zmiana
+    *proposal.confidence_level = calculateConfidenceLevel(proposal.modified_code); // Dynamiczne obliczanie poziomu pewności
+    proposal.description = "Zmień nazwę zmiennej 'i' na 'index' w pętli.";
+    return proposal;
+}
+
+
+
+
+// Funkcja oceniająca propozycję zmiany
+bool evaluateChangeProposal(const ChangeProposal& proposal) {
+    // Przykładowe kryterium: akceptuj zmiany z pewnością powyżej 90%
+    if (*proposal.confidence_level <= 90.0) {
+        return false;
+    }
+
+    // Analiza statyczna
+    if (!runStaticAnalysis(proposal.modified_code)) {
+        LogErrorToEditControl(hwndErrorEdit, L"Analiza statyczna nie powiodła się.\n");
+        return false;
+    }
+
+    // Sprawdzanie kontekstu
+    // Przykładowa logika sprawdzania kontekstu
+    if (proposal.modified_code.find("int main") != std::string::npos) {
+        LogErrorToEditControl(hwndErrorEdit, L"Zmiana w funkcji main nie jest dozwolona.\n");
+        return false;
+    }
+
+    // Uruchamianie testów jednostkowych
+    if (!runUnitTests()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Testy jednostkowe nie powiodły się.\n");
+        return false;
+    }
+
+    // Definiowane reguły
+    std::regex comment_regex(R"(//.*)");
+    if (!std::regex_search(proposal.modified_code, comment_regex)) {
+        LogErrorToEditControl(hwndErrorEdit, L"Zmiana musi zawierać komentarze.\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Funkcja stosująca zmiany do kodu
+void applyChangeProposal(const ChangeProposal& proposal) {
+    std::lock_guard<std::mutex> lock(codeMutex);
+    kod_zrodlowy = proposal.modified_code;
+    kod_zmieniony = true;
+}
+
+// Funkcja logująca zmiany
+void logChange(const ChangeProposal& proposal) {
+    std::ofstream log_file("change_log.txt", std::ios::app);
+    if (log_file.is_open()) {
+        log_file << "Oryginalny kod:\n" << proposal.original_code << "\n";
+        log_file << "Zmodyfikowany kod:\n" << proposal.modified_code << "\n";
+        log_file << "Pewność modelu: " << *proposal.confidence_level << "%\n";
+        log_file << "Opis zmiany: " << proposal.description << "\n";
+        log_file << "--------------------------\n";
+        log_file.close();
+    }
+}
+
+// Funkcja przetwarzająca propozycje zmian
+void processChangeProposal(const ChangeProposal& proposal) {
+    if (evaluateChangeProposal(proposal)) {
+        applyChangeProposal(proposal);
+        logChange(proposal);
+        updateEditText(hwndEdit, proposal.modified_code);
+        // Informowanie użytkownika o automatycznych zmianach
+        LogToEditControl(hwndErrorEdit, L"Automatyczna zmiana została wprowadzona.\n");
+    }
+}
+
+
+// Funkcja wyświetlająca propozycję zmiany w kontrolce hwndEdit
+void displayChangeProposal(HWND hwndEdit, const ChangeProposal& proposal) {
+    std::wstringstream ws;
+    ws << L"Oryginalny kod:\n" << StringToWideString(proposal.original_code) << L"\n\n";
+    ws << L"Zmodyfikowany kod:\n" << StringToWideString(proposal.modified_code) << L"\n\n";
+    ws << L"Pewność modelu: " << std::fixed << std::setprecision(2) << *proposal.confidence_level << L"%\n\n";
+    ws << L"Opis zmiany: " << StringToWideString(proposal.description) << L"\n";
+
+    SetWindowTextW(hwndEdit, ws.str().c_str());
+}
+
+
+// Globalne zmienne do obsługi kolejki komunikatów
+std::queue<std::shared_ptr<ChangeProposal>> messageQueue;
+std::mutex queueMutex;
+std::condition_variable queueCondition;
+
+// Funkcja dodająca komunikat do kolejki
+void add_message(const std::shared_ptr<ChangeProposal>& message) {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    messageQueue.push(message);
+    queueCondition.notify_one();
+}
+
+// Funkcja pobierająca komunikat z kolejki
+std::shared_ptr<ChangeProposal> get_change_proposal_message() {
+    std::unique_lock<std::mutex> lock(queueMutex);
+    queueCondition.wait(lock, [] { return !messageQueue.empty(); });
+    auto message = messageQueue.front();
+    messageQueue.pop();
+    return message;
+}
+
+// Funkcja przetwarzająca komunikaty z kolejki
+void messageProcessingThread(HWND hwnd) {
+    while (running) {
+        auto message = get_change_proposal_message();
+        // Przetwarzanie komunikatu
+        if (message->description.find("ChangeProposal") != std::string::npos) {
+            // Deserializacja propozycji zmiany
+            ChangeProposal proposal = *message;
+            // Kod deserializacji tutaj (np. z JSON)
+            processChangeProposal(proposal);
+
+            // Aktualizacja kontrolki hwndEdit
+            PostMessage(hwnd, WM_UPDATE_EDIT, 0, (LPARAM)new std::string(proposal.modified_code));
+
+            // Aktualizacja kontrolki hwndErrorEdit
+            PostMessage(hwnd, WM_UPDATE_ERROR_EDIT, 0, (LPARAM)new std::wstring(L"Automatyczna zmiana została wprowadzona.\n"));
+        }
+        else if (message->description == "MessageTypeTHREAD_TERMINATE") {
+            break;
+        }
+        // Inne typy komunikatów można obsłużyć tutaj
+    }
+}
+
+
+
+// Przykład użycia
+void exampleUsage(HWND hwndEdit) {
+    std::string original_code = "for (int i = 0; i < 10; ++i)";
+    auto proposal = std::make_shared<ChangeProposal>(generateChangeProposal(original_code));
+    displayChangeProposal(hwndEdit, *proposal);
+
+    // Przekazywanie propozycji zmiany do kolejki komunikatów
+    add_message(proposal);
+}
+
+// Historia zmian
+std::stack<ChangeProposal> change_history;
+
+// Funkcja cofająca ostatnie zmiany
+void undoLastChanges(int num_changes) {
+    for (int i = 0; i < num_changes && !change_history.empty(); ++i) {
+        ChangeProposal last_change = change_history.top();
+        change_history.pop();
+        applyChangeProposal({ last_change.modified_code, last_change.original_code, 100.0, "Cofnięcie zmiany" });
+        updateEditText(hwndEdit, last_change.original_code);
+        LogToEditControl(hwndErrorEdit, L"Automatyczna zmiana została cofnięta.\n");
+    }
+}
+
+// Przykład wywołania funkcji undoLastChanges w odpowiednim miejscu
+void someFunction() {
+    // Cofnięcie do 10 ostatnich zmian
+    undoLastChanges(10);
+}
+
+
+
+
+// Konfiguracja kryteriów oceny
+double confidence_threshold = 90.0;
+
+void setConfidenceThreshold(double threshold) {
+    confidence_threshold = threshold;
+}
+
+enum MessageType {
+    // Inne typy komunikatów
+    MessageTypeTHREAD_TERMINATE
+};
+
+class Singleton {
+public:
+    static Singleton& getInstance() {
+        static Singleton instance;
+        return instance;
+    }
+
+    void Inicjalizacja() {
+        if (!initialized) {
+            // Wczytywanie konfiguracji
+            // Inicjalizacja modelu RNN
+            rnn = std::make_shared<RecurrentNeuralNetwork>(input_size, hidden_size, output_size);
+            rnn->load_model("rnn_model.bin");
+            initialized = true;
+        }
+    }
+
+    std::shared_ptr<RecurrentNeuralNetwork> getRNN() {
+        return rnn;
+    }
+
+private:
+    Singleton() : initialized(false) {}
+    bool initialized;
+    std::shared_ptr<RecurrentNeuralNetwork> rnn;
+    int input_size = 224 * 224 * 3;
+    int hidden_size = 128;
+    int output_size = 10;
+};
+
+
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    static HWND hwndEdit;
+    static HWND hwndErrorEdit;
+    static int current_epoch = 0;
+    static std::shared_ptr<RecurrentNeuralNetwork> rnn;
+    static std::shared_ptr<ov::Model> cnn_model;
+    static ov::Core core;
+
+    switch (uMsg) {
+    case WM_CREATE:
+    {
+        InitializeRichEdit();
+
+        hwndEdit = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            MSFTEDIT_CLASS,
+            NULL,
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL,
+            61, 54, 400, 200,
+            hwnd,
+            (HMENU)ID_EDIT_TEXT,
+            GetModuleHandle(NULL),
+            NULL
+        );
+
+        hwndErrorEdit = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            MSFTEDIT_CLASS,
+            NULL,
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL,
+            10, 270, 400, 200,
+            hwnd,
+            NULL,
+            GetModuleHandle(NULL),
+            NULL
+        );
+
+        runClangStaticAnalyzer();
+        LoadAndDisplayClangAnalyzerResults(hwndErrorEdit);
+
+        // Inicjalizacja modelu CNN
+        load_cnn_model("model.xml", "model.bin", core, cnn_model);
+
+        // Inicjalizacja Singleton
+        Singleton::getInstance().Inicjalizacja();
+        rnn = Singleton::getInstance().getRNN();
+
+        // Inicjalizacja monitorowania
+        initializeMonitoring();
+
+        // Wywołanie funkcji generującej propozycję zmiany
+        exampleUsage(hwndEdit);
+
+        // Uruchomienie wątku przetwarzającego komunikaty
+        std::thread messageThread(messageProcessingThread, hwnd);
+        messageThread.detach();
+
+        return 0;
+    }
+
+    case WM_SIZE:
+    {
+        RECT rect;
+        GetClientRect(hwnd, &rect);
+        SetWindowPos(hwndErrorEdit, NULL, rect.right - 410, rect.bottom - 230, 400, 200, SWP_NOZORDER);
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        std::wstring status_text;
+        std::wstring epoch_text;
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            status_text = training_in_progress ? L"Trening w toku..." : L"Trening zakończony";
+            epoch_text = L"Epoka: " + std::to_wstring(current_epoch);
+        }
+        TextOutW(hdc, 5, 5, status_text.c_str(), status_text.length());
+        TextOutW(hdc, 5, 25, epoch_text.c_str(), epoch_text.length());
+
+        RECT client_rect;
+        GetClientRect(hwnd, &client_rect);
+
+        RECT loss_rect = { client_rect.right - 410, 10, client_rect.right - 10, 160 };
+        RECT accuracy_rect = { client_rect.right - 410, 170, client_rect.right - 10, 320 };
+        DrawGraph(hdc, loss_rect, loss_values, L"Loss");
+        DrawGraph(hdc, accuracy_rect, accuracy_values, L"Accuracy");
+
+        RECT diagnostic_rect = { 712, 336, client_rect.right - 10, client_rect.bottom - 10 };
+        std::wstring auto_percentage = std::to_wstring((auto_data_count * 100) / total_data_count) + L"%";
+        std::wstring manual_percentage = std::to_wstring((manual_data_count * 100) / total_data_count) + L"%";
+        std::wstring diagnostic_text = L"Wczytano dane treningowe: automatyczne " + auto_percentage + L", ręczne " + manual_percentage;
+        DrawDiagnosticText(hdc, diagnostic_rect, diagnostic_text);
+
+        RECT error_label_rect = { client_rect.right - 410, client_rect.bottom - 250, client_rect.right - 10, client_rect.bottom - 230 };
+        DrawTextW(hdc, L"Błędy logiczne i inne błędy", -1, &error_label_rect, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+
+    case WM_USER + 1:
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        current_epoch = static_cast<int>(wParam);
+    }
+    InvalidateRect(hwnd, NULL, TRUE);
+    return 0;
+    case WM_USER + 2:
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        training_in_progress = false;
+    }
+    InvalidateRect(hwnd, NULL, TRUE);
+    return 0;
+    case WM_UPDATE_EDIT:
+    {
+        std::string* modified_code = reinterpret_cast<std::string*>(lParam);
+        updateEditText(hwndEdit, *modified_code);
+        delete modified_code; // Zwalnianie pamięci
+    }
+    return 0;
+    case WM_UPDATE_ERROR_EDIT:
+    {
+        std::wstring* message = reinterpret_cast<std::wstring*>(lParam);
+        LogToEditControl(hwndErrorEdit, *message);
+        delete message; // Zwalnianie pamięci
+    }
+    return 0;
+
+    case WM_CLOSE:
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        running = false;
+        message_queue.push("MessageTypeTHREAD_TERMINATE");
+        queue_cv.notify_one();
+        if (messageThread.joinable()) {
+            messageThread.join();
+        }
+        DestroyWindow(hwnd);
+    }
+    return 0;
+    case WM_KEYDOWN:
+    {
+        if (wParam == VK_ESCAPE) {
+            DestroyWindow(hwnd);
+        }
+    }
+    return 0;
+    case WM_LBUTTONDOWN:
+    {
+        POINTS pt = MAKEPOINTS(lParam);
+        std::wstringstream ws;
+        ws << L"Kliknięto w punkcie: (" << pt.x << L", " << pt.y << L")";
+        LogToEditControl(hwndErrorEdit, ws.str() + L"\n");
+    }
+    return 0;
+    default:
+        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    }
+}
+
+
+void updateUIAfterModification(HWND hwndEdit, const std::string& modified_code) {
+    updateEditText(hwndEdit, modified_code);
+    InvalidateRect(GetParent(hwndEdit), NULL, TRUE);
+
+    // Wywołanie funkcji run_logical_tests
+    if (run_logical_tests(modified_code)) {
+        LogToEditControl(hwndErrorEdit, L"Testy logiczne przeszły pomyślnie.\n");
     }
     else {
-        Serial.println("Error: Failed to take resourceSemaphore");
+        LogErrorToEditControl(hwndErrorEdit, L"Testy logiczne nie powiodły się.\n");
     }
-    return calibratedVoltage;
 }
 
-// Przykładowa kalibracja: przelicz surowe napięcie na rzeczywiste napięcie
-float calibrateVoltage(float rawVoltage) {
-    return rawVoltage * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
+
+
+VectorXd reprezentacja_wektorowa(const string& kod_zrodlowy) {
+    std::lock_guard<std::mutex> lock(clang_mutex);
+
+    CXIndex index = clang_createIndex(0, 0);
+    unsigned int options = CXTranslationUnit_None;
+    CXUnsavedFile unsavedFile = { "temp_code.cpp", kod_zrodlowy.c_str(), static_cast<unsigned long>(kod_zrodlowy.size()) };
+    CXTranslationUnit unit;
+    if (clang_parseTranslationUnit2(index, "temp_code.cpp", nullptr, 0, &unsavedFile, 1, options, &unit) != CXError_Success) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można sparsować kodu źródłowego.\n");
+        clang_disposeIndex(index);
+        return VectorXd::Zero(224 * 224 * 3);
+    }
+    CXCursor cursor = clang_getTranslationUnitCursor(unit);
+    VectorXd features = VectorXd::Zero(224 * 224 * 3);
+    int feature_index = 0;
+    auto data = std::make_pair(&features, &feature_index);
+    clang_visitChildren(
+        cursor,
+        [](CXCursor c, CXCursor parent, CXClientData client_data) {
+            auto data = static_cast<std::pair<VectorXd*, int*>*>(client_data);
+            VectorXd* features = data->first;
+            int* feature_index = data->second;
+            if (clang_Location_isFromMainFile(clang_getCursorLocation(c)) == 0) {
+                return CXChildVisit_Continue;
+            }
+            CXCursorKind kind = clang_getCursorKind(c);
+            if (kind == CXCursor_FunctionDecl) {
+                if (*feature_index < features->size()) {
+                    (*features)(*feature_index) = 1.0; // Oznacz funkcję
+                    (*feature_index)++;
+                }
+            }
+            else if (kind == CXCursor_ClassDecl) {
+                if (*feature_index < features->size()) {
+                    (*features)(*feature_index) = 2.0; // Oznacz klasę
+                    (*feature_index)++;
+                }
+            }
+            else if (kind == CXCursor_VarDecl) {
+                if (*feature_index < features->size()) {
+                    (*features)(*feature_index) = 3.0; // Oznacz zmienną
+                    (*feature_index)++;
+                }
+            }
+            else if (kind == CXCursor_ParmDecl) {
+                if (*feature_index < features->size()) {
+                    (*features)(*feature_index) = 4.0; // Oznacz parametr funkcji
+                    (*feature_index)++;
+                }
+            }
+            // Dodanie dodatkowych cech
+            else if (kind == CXCursor_CallExpr) {
+                if (*feature_index < features->size()) {
+                    (*features)(*feature_index) = 5.0; // Oznacz wywołanie funkcji
+                    (*feature_index)++;
+                }
+            }
+            else if (kind == CXCursor_ReturnStmt) {
+                if (*feature_index < features->size()) {
+                    (*features)(*feature_index) = 6.0; // Oznacz instrukcję return
+                    (*feature_index)++;
+                }
+            }
+            return CXChildVisit_Recurse;
+        },
+        &data);
+    clang_disposeTranslationUnit(unit);
+    clang_disposeIndex(index);
+    return features;
 }
 
-// Implementacja funkcji simulateVoltageControl
-float simulateVoltageControl(float Kp, float Ki, float Kd) {
-    float setpoint = 230.0; // Docelowe napięcie w woltach
-    float measuredValue = readVoltage();
-    float error = setpoint - measuredValue;
-    float controlSignal = Kp * error + Ki * (error * 50) + Kd * (error / 50);
-    return controlSignal;
-}
+// Funkcja generująca modyfikacje na podstawie wyników modelu
+std::string przekształć_na_kod_zrodlowy(const VectorXd& output, int attempts) {
+    std::stringstream ss;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(-0.1, 0.1);
+    std::uniform_int_distribution<> dist_type(0, 14);
 
-// Implementacja funkcji simulateExcitationControl
-float simulateExcitationControl() {
-    int rawValue = analogRead(01);
+    for (int i = 0; i < output.size(); ++i) {
+        double value = output[i];
 
-    // Sprawdzenie, czy wartość mieści się w oczekiwanym zakresie
-    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
-        Serial.println("Błąd: Odczytana wartość spoza zakresu!");
-        return 0.0; // Zwróć 0.0 w przypadku błędu
+        if (attempts > 0) {
+            value += dis(gen) * attempts;
+        }
+
+        int mod_type = dist_type(gen);
+
+        if (attempts % 3 == 0) {
+            if (value > 0.5) {
+                if (mod_type == 0) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    int c = a + b;\n    std::cout << \"Wynik: \" << c << std::endl;\n}\n";
+                }
+                else if (mod_type == 1) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    for (int j = 0; j < a; ++j) {\n        std::cout << j << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 2) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    if (a > b) {\n        std::cout << \"a > b\" << std::endl;\n    } else {\n        std::cout << \"a <= b\" << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 3) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    int arr[5] = {1, 2, 3, 4, 5};\n    for (int j = 0; j < 5; ++j) {\n        std::cout << arr[j] << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 4) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::vector<int> vec = {1, 2, 3, 4, 5};\n    for (int val : vec) {\n        std::cout << val << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 5) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::map<int, std::string> mapa = {{1, \"jeden\"}, {2, \"dwa\"}};\n    for (const auto& [klucz, wartosc] : mapa) {\n        std::cout << klucz << \": \" << wartosc << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 6) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::set<int> zbior = {1, 2, 3, 4, 5};\n    for (int val : zbior) {\n        std::cout << val << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 7) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::list<int> lista = {1, 2, 3, 4, 5};\n    for (int val : lista) {\n        std::cout << val << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 8) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::deque<int> kolejka = {1, 2, 3, 4, 5};\n    for (int val : kolejka) {\n        std::cout << val << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 9) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::array<int, 5> tablica = {1, 2, 3, 4, 5};\n    for (int val : tablica) {\n        std::cout << val << std::endl;\n    }\n}\n";
+                }
+                else if (mod_type == 10) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    int zmienna_" << i << " = a + b;\n    std::cout << \"Zmienna: \" << zmienna_" << i << " << std::endl;\n}\n";
+                }
+                else if (mod_type == 11) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    double zmienna_" << i << " = a * b;\n    std::cout << \"Zmienna: \" << zmienna_" << i << " << std::endl;\n}\n";
+                }
+                else if (mod_type == 12) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    std::string zmienna_" << i << " = std::to_string(a) + std::to_string(b);\n    std::cout << \"Zmienna: \" << zmienna_" << i << " << std::endl;\n}\n";
+                }
+                else if (mod_type == 13) {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    // To jest komentarz\n    std::cout << \"Komentarz\" << std::endl;\n}\n";
+                }
+                else {
+                    ss << "void funkcja_" << i << "(int a, int b) {\n    /* To jest komentarz blokowy */\n    std::cout << \"Komentarz blokowy\" << std::endl;\n}\n";
+                }
+            }
+            else if (value > 0.3) {
+                ss << "void zmien_parametry_funkcji_" << i << "(int a, int b) {\n    int wynik = a * b;\n    std::cout << \"Wynik: \" << wynik << std::endl;\n}\n";
+            }
+            else if (value > 0.1) {
+                ss << "class Klasa_" << i << " {\npublic:\n    void metoda(int a, int b) {\n        int x = a + b;\n        int y = a * b;\n        int z = x * y;\n        std::cout << \"Wynik: \" << z << std::endl;\n    }\n};\n";
+            }
+        }
+        else if (attempts % 3 == 1) {
+            if (value > 0.5) {
+                ss << "void funkcja_" << i << "(int a, int b) {\n    int x = a + b;\n    int y = a - b;\n    int z = x * y;\n    std::cout << \"Wynik: \" << z << std::endl;\n}\n";
+            }
+            else if (value > 0.3) {
+                ss << "void zmien_parametry_funkcji_" << i << "(int a, int b) {\n    int wynik = a + b;\n    std::cout << \"Wynik: \" << wynik << std::endl;\n}\n";
+            }
+        }
+        else {
+            if (value > 0.5) {
+                ss << "void funkcja_" << i << "(int a, int b) {\n    int c = a * b;\n    std::cout << \"Wynik: \" << c << std::endl;\n}\n";
+            }
+            else if (value > 0.3) {
+                ss << "void zmien_parametry_funkcji_" << i << "(int a, int b) {\n    int wynik = a - b;\n    std::cout << \"Wynik: \" << wynik << std::endl;\n}\n";
+            }
+            else if (value > 0.1) {
+                ss << "class Klasa_" << i << " {\npublic:\n    void metoda(int a, int b) {\n        int x = a * b;\n        int y = a + b;\n        int z = x + y;\n        std::cout << \"Wynik: \" << z << std::endl;\n    }\n};\n";
+            }
+        }
     }
 
-    // Debugowanie: wyświetlenie odczytanej wartości
-    Serial.print("Odczytana wartość z A1: ");
-    Serial.println(rawValue);
-
-    // Przeliczenie surowej wartości na prąd wzbudzenia
-    float excitationCurrent = calibrateVoltage(rawValue);
-    return excitationCurrent;
+    return ss.str();
 }
 
-// Definicja funkcji someFunctionOfOtherParameters
-float someFunctionOfOtherParameters(float rotationalSpeed, float torque, float frictionCoefficient) {
-    // Przykładowa implementacja funkcji
-    // Możesz dostosować tę funkcję do swoich potrzeb
-    float result = (rotationalSpeed * torque) / (frictionCoefficient + 1.0);
+bool validate_code(const std::string& modified_code) {
+    std::ofstream file("modified_code.cpp", std::ios::out | std::ios::binary);
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu zmodyfikowanego kodu.\n");
+        return false;
+    }
+    file << "\xEF\xBB\xBF"; // Dodanie BOM (Byte Order Mark) dla UTF-8
+    file << modified_code;
+    file.close();
+
+    // Kompilacja kodu
+    std::string compile_command = "g++ -o modified_code.exe modified_code.cpp -I C:/Users/MOREK/source/repos/WindowsProject1/vcpkg/installed/x64-windows/include/Eigen/Dense";
+    int compile_result = std::system(compile_command.c_str());
+    if (compile_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błąd kompilacji zmodyfikowanego kodu.\n");
+        return false;
+    }
+
+    // Analiza statyczna kodu
+    std::string analysis_command = "cppcheck --enable=all modified_code.cpp";
+    int analysis_result = std::system(analysis_command.c_str());
+    if (analysis_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błędy analizy statycznej w zmodyfikowanym kodzie.\n");
+        return false;
+    }
+
+    // Analiza statyczna za pomocą clang-tidy
+    std::string clang_tidy_command = "clang-tidy modified_code.cpp -- -std=c++17";
+    int clang_tidy_result = std::system(clang_tidy_command.c_str());
+    if (clang_tidy_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błędy analizy statycznej za pomocą clang-tidy w zmodyfikowanym kodzie.\n");
+        return false;
+    }
+
+    return true;
+}
+
+
+bool test_modified_code(const std::string& modified_code) {
+    std::ofstream file("modified_code.cpp", std::ios::out | std::ios::binary);
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu zmodyfikowanego kodu.\n");
+        return false;
+    }
+    file << "\xEF\xBB\xBF"; // Dodanie BOM (Byte Order Mark) dla UTF-8
+    file << modified_code;
+    file.close();
+
+    // Kompilacja kodu
+    std::string compile_command = "g++ -o modified_code.exe modified_code.cpp";
+    int compile_result = std::system(compile_command.c_str());
+    if (compile_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błąd kompilacji zmodyfikowanego kodu.\n");
+        return false;
+    }
+
+    // Uruchomienie testów jednostkowych
+    std::string run_command = "./modified_code.exe";
+    int run_result = std::system(run_command.c_str());
+    if (run_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błąd uruchomienia zmodyfikowanego kodu.\n");
+        return false;
+    }
+
+    return true;
+}
+
+
+double measure_performance(const std::string& modified_code) {
+    std::ofstream file("modified_code.cpp");
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu zmodyfikowanego kodu.\n");
+        return -1.0;
+    }
+    file << modified_code;
+    file.close();
+
+    // Kompilacja kodu
+    std::string compile_command = "g++ -o modified_code.exe modified_code.cpp";
+    int compile_result = std::system(compile_command.c_str());
+    if (compile_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błąd kompilacji zmodyfikowanego kodu.\n");
+        return -1.0;
+    }
+
+    // Pomiar czasu wykonania
+    auto start = std::chrono::high_resolution_clock::now();
+    std::string run_command = "./modified_code.exe";
+    int run_result = std::system(run_command.c_str());
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (run_result != 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Błąd uruchomienia zmodyfikowanego kodu.\n");
+        return -1.0;
+    }
+
+    std::chrono::duration<double> duration = end - start;
+    return duration.count();
+}
+
+void train_with_reinforcement_learning(std::shared_ptr<RecurrentNeuralNetwork> rnn, const vector<VectorXd>& inputs, const vector<VectorXd>& targets, double initial_learning_rate, int epochs, HWND hwnd) {
+    if (inputs.size() != targets.size()) {
+        std::wstring error_message = L"Rozmiary inputs (" + std::to_wstring(inputs.size()) + L") i targets (" + std::to_wstring(targets.size()) + L") są niezgodne.";
+        LogErrorToEditControl(hwndErrorEdit, error_message);
+        return;
+    }
+
+    std::thread training_thread([=]() {
+        double learning_rate = initial_learning_rate;
+        for (int epoch = 0; epoch < epochs; ++epoch) {
+            auto start_epoch = std::chrono::high_resolution_clock::now();
+            std::vector<std::future<void>> futures;
+            size_t num_threads = std::thread::hardware_concurrency();
+            size_t chunk_size = inputs.size() / num_threads;
+
+            for (size_t t = 0; t < num_threads; ++t) {
+                futures.push_back(std::async(std::launch::async, [&, t]() {
+                    size_t start = t * chunk_size;
+                    size_t end = (t == num_threads - 1) ? inputs.size() : start + chunk_size;
+
+                    for (size_t i = start; i < end; ++i) {
+                        try {
+                            int index = static_cast<int>(i);
+                            validate_index(index, static_cast<int>(inputs.size()));
+                            validate_index(index, static_cast<int>(targets.size()));
+                            if (inputs[i].size() != rnn->get_input_size()) {
+                                std::wstring error_message = L"Rozmiar wejścia (" + std::to_wstring(inputs[i].size()) + L") jest niezgodny z oczekiwanym rozmiarem sieci (" + std::to_wstring(rnn->get_input_size()) + L").";
+                                LogErrorToEditControl(hwndErrorEdit, error_message);
+                                return;
+                            }
+
+                            if (targets[i].size() != rnn->get_output_size()) {
+                                std::wstring error_message = L"Rozmiar celu (" + std::to_wstring(targets[i].size()) + L") jest niezgodny z oczekiwanym rozmiarem wyjścia sieci (" + std::to_wstring(rnn->get_output_size()) + L").";
+                                LogErrorToEditControl(hwndErrorEdit, error_message);
+                                return;
+                            }
+
+                            // Sprawdzenie wyrównania pamięci
+                            if (reinterpret_cast<uintptr_t>(inputs[i].data()) % 16 != 0) {
+                                LogErrorToEditControl(hwndErrorEdit, L"Dane wejściowe nie są wyrównane do 16 bajtów!\n");
+                                return;
+                            }
+
+                            // Sprawdzenie wskaźnika
+                            if (inputs[i].data() == nullptr) {
+                                LogErrorToEditControl(hwndErrorEdit, L"Wskaźnik inputs[i].data() jest nullptr!\n");
+                                return;
+                            }
+
+                            VectorXd output = rnn->forward(inputs[i]);
+                            VectorXd reward = targets[i] - output;
+
+                            if (reward.size() != rnn->get_output_size()) {
+                                std::wstring error_message = L"Rozmiar reward (" + std::to_wstring(reward.size()) + L") jest niezgodny z oczekiwanym rozmiarem wyjścia sieci (" + std::to_wstring(rnn->get_output_size()) + L").";
+                                LogErrorToEditControl(hwndErrorEdit, error_message);
+                                return;
+                            }
+
+                            rnn->train({ inputs[i] }, { reward }, learning_rate);
+
+                            double loss = reward.squaredNorm();
+                            double accuracy = (reward.array().abs() < 0.5).cast<double>().mean();
+                            AddDataPoint(loss, accuracy);
+                        }
+                        catch (const std::invalid_argument& e) {
+                            std::wstring error_message = L"Wyjątek std::invalid_argument: " + std::wstring(e.what(), e.what() + strlen(e.what()));
+                            LogErrorToEditControl(hwndErrorEdit, error_message);
+                        }
+                        catch (const std::exception& e) {
+                            std::wstring error_message = L"Standardowy wyjątek: " + std::wstring(e.what(), e.what() + strlen(e.what()));
+                            LogErrorToEditControl(hwndErrorEdit, error_message);
+                        }
+                        catch (...) {
+                            LogErrorToEditControl(hwndErrorEdit, L"Nieznany wyjątek.");
+                        }
+                    }
+                    }));
+            }
+
+            for (auto& future : futures) {
+                future.get();
+            }
+
+            auto end_epoch = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> epoch_duration = end_epoch - start_epoch;
+            {
+                std::wstringstream ws;
+                ws << L"Epoch " << epoch + 1 << L" completed in " << epoch_duration.count() << L" seconds.\n";
+                LogToEditControl(hwndErrorEdit, ws.str());
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (IsWindow(hwnd)) {
+                    PostMessage(hwnd, WM_USER + 1, static_cast<WPARAM>(epoch + 1), 0);
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(cv_mtx);
+                if (!training_in_progress) {
+                    LogToEditControl(hwndErrorEdit, L"Trening przerwany.\n");
+                    return;
+                }
+            }
+
+            // Zmniejszanie współczynnika uczenia co 10 epok
+            if ((epoch + 1) % 10 == 0) {
+                learning_rate *= 0.9;
+            }
+
+            // Generowanie modyfikacji kodu po każdej epoce
+            int attempts = 0; // Inicjalizacja zmiennej attempts
+
+            VectorXd input = reprezentacja_wektorowa(kod_zrodlowy);
+            VectorXd output = rnn->forward(input);
+            std::string zmodyfikowany_kod = przekształć_na_kod_zrodlowy(output, attempts); // Dodano brakujący argument attempts
+
+            // Testowanie zmodyfikowanego kodu
+            if (validate_code(zmodyfikowany_kod) && test_modified_code(zmodyfikowany_kod)) {
+                double performance = measure_performance(zmodyfikowany_kod);
+                {
+                    std::wstringstream ws;
+                    ws << L"Wydajność zmodyfikowanego kodu: " << performance << L" sekund\n";
+                    LogToEditControl(hwndErrorEdit, ws.str());
+                }
+
+                // Aktualizacja tekstu w kontrolce EDIT
+                updateEditText(hwndEdit, zmodyfikowany_kod);
+
+                // Aktualizacja interfejsu użytkownika po modyfikacji kodu
+                updateUIAfterModification(hwndEdit, zmodyfikowany_kod);
+
+
+                // Wywołanie funkcji run_logical_tests
+                if (run_logical_tests(zmodyfikowany_kod)) {
+                    LogToEditControl(hwndErrorEdit, L"Testy logiczne przeszły pomyślnie.\n");
+                }
+                else {
+                    LogErrorToEditControl(hwndErrorEdit, L"Testy logiczne nie powiodły się.\n");
+                }
+            }
+            else {
+                LogErrorToEditControl(hwndErrorEdit, L"Walidacja lub testowanie zmodyfikowanego kodu nie powiodło się.\n");
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            if (IsWindow(hwnd)) {
+                PostMessage(hwnd, WM_USER + 2, 0, 0);
+            }
+        }
+
+        // Zapisanie modelu po zakończeniu treningu
+        rnn->save_model("rnn_model.bin");
+
+        // Wyświetlenie wyników treningu
+        DisplayTrainingResults(hwnd);
+
+        // Wywołanie run_inference_on_npu po wytrenowaniu modelu
+        std::vector<VectorXd> dummy_inputs = generuj_dane_treningowe(1); // Przykładowe dane wejściowe
+        run_inference_on_npu("model.xml", "model.bin", dummy_inputs, hwndErrorEdit);
+        });
+
+    training_thread.detach();
+}
+
+void normalize_targets(vector<VectorXd>& targets, size_t desired_size) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(-0.1, 0.1);
+
+    while (targets.size() < desired_size) {
+        VectorXd target(10);
+        for (int i = 0; i < 10; ++i) {
+            target[i] = dis(gen);
+        }
+        targets.push_back(target);
+    }
+}
+
+
+vector<VectorXd> przygotuj_dane_wyjsciowe(const string& pozadane_modyfikacje) {
+    vector<VectorXd> targets;
+
+    // Dzieli ciąg na pojedyncze modyfikacje
+    istringstream iss(pozadane_modyfikacje);
+    string modyfikacja;
+    while (getline(iss, modyfikacja, ',')) {
+        VectorXd target = VectorXd::Zero(10); // Inicjalizacja wektora zerami
+
+        // Parsowanie modyfikacji za pomocą wyrażeń regularnych
+        smatch match;
+        try {
+            if (regex_search(modyfikacja, match, regex(R"(Dodaj funkcję (\d+))"))) {
+                int indeks = stoi(match[1]);
+                validate_index(indeks, 10);
+                target[indeks] = 1.0;
+            }
+            else if (regex_search(modyfikacja, match, regex(R"(Usuń funkcję (\d+))"))) {
+                int indeks = stoi(match[1]);
+                validate_index(indeks, 10);
+                target[indeks] = -1.0;
+            }
+            else if (regex_search(modyfikacja, match, regex(R"(Zmień parametry funkcji (\d+))"))) {
+                int indeks = stoi(match[1]);
+                validate_index(indeks, 10);
+                target[indeks] = 0.5; // Przykładowa wartość dla zmiany parametrów funkcji
+            }
+            else if (regex_search(modyfikacja, match, regex(R"(Dodaj klasę (\d+))"))) {
+                int indeks = stoi(match[1]);
+                validate_index(indeks, 10);
+                target[indeks] = 2.0; // Przykładowa wartość dla dodania klasy
+            }
+            else if (regex_search(modyfikacja, match, regex(R"(Usuń klasę (\d+))"))) {
+                int indeks = stoi(match[1]);
+                validate_index(indeks, 10);
+                target[indeks] = -2.0; // Przykładowa wartość dla usunięcia klasy
+            }
+            else {
+                throw invalid_argument("Nieznana modyfikacja: " + modyfikacja);
+            }
+        }
+        catch (const exception& e) {
+            std::wstringstream ws;
+            ws << L"Błąd parsowania modyfikacji: " << e.what();
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+            continue; // Pomijamy niepoprawne modyfikacje
+        }
+
+        targets.push_back(target);
+    }
+
+    // Uzupełnienie do 1000 wektorów wyjściowych, jeśli jest ich mniej
+    normalize_targets(targets, 1000);
+
+    return targets;
+}
+
+vector<VectorXd> wczytaj_dane_wejsciowe_z_pliku(const string& nazwa_pliku) {
+    vector<VectorXd> dane_wejsciowe;
+    ifstream plik(nazwa_pliku);
+    if (!plik.is_open()) {
+        std::wstringstream ws;
+        ws << L"Nie można otworzyć pliku: " << std::wstring(nazwa_pliku.begin(), nazwa_pliku.end());
+        LogErrorToEditControl(hwndErrorEdit, ws.str());
+        return dane_wejsciowe; // Zwracamy pusty wektor w przypadku błędu
+    }
+
+    string linia;
+    while (getline(plik, linia)) {
+        stringstream ss(linia);
+        double liczba;
+        VectorXd wektor(224 * 224 * 3); // Zakładamy, że wektor ma rozmiar 224 * 224 * 3
+        int indeks = 0;
+        while (ss >> liczba && indeks < wektor.size()) {
+            validate_index(indeks, static_cast<int>(wektor.size()));
+            wektor[indeks++] = liczba;
+
+        }
+        if (indeks == wektor.size()) {
+            // Sprawdzenie wyrównania pamięci
+            check_alignment(wektor.data(), 16);
+            dane_wejsciowe.push_back(wektor);
+            manual_data_count++;
+            total_data_count++;
+        }
+        else {
+            std::wstringstream ws;
+            ws << L"Nieprawidłowy format linii w pliku: " << std::wstring(linia.begin(), linia.end());
+            LogErrorToEditControl(hwndErrorEdit, ws.str());
+        }
+    }
+
+    plik.close();
+    return dane_wejsciowe;
+}
+
+
+
+vector<VectorXd> przygotuj_dane_wejsciowe(const string& kod_zrodlowy, int input_size) {
+    vector<VectorXd> inputs;
+
+    // Inicjalizacja Clang
+    CXIndex index = clang_createIndex(0, 0);
+
+    // Ustawienia opcji parsowania
+    unsigned int options = CXTranslationUnit_None;
+
+    // Tworzenie tymczasowego pliku z kodem źródłowym
+    std::ofstream temp_file("temp_code.cpp");
+    if (!temp_file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku temp_code.cpp do zapisu.\n");
+        return inputs;
+    }
+    temp_file << kod_zrodlowy;
+    temp_file.close();
+
+    // Parsowanie jednostki translacji
+    CXTranslationUnit unit = clang_parseTranslationUnit(
+        index, "temp_code.cpp", nullptr, 0, nullptr, 0, options);
+
+    if (unit == nullptr) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można sparsować kodu źródłowego.\n");
+        clang_disposeIndex(index);
+        return inputs;
+    }
+
+    // Przechodzenie po drzewie AST i ekstrakcja cech
+    CXCursor cursor = clang_getTranslationUnitCursor(unit);
+    VectorXd cechy = VectorXd::Zero(input_size);
+    int feature_index = 0;
+
+    auto data = std::make_pair(&cechy, &feature_index);
+
+    clang_visitChildren(
+        cursor,
+        [](CXCursor c, CXCursor parent, CXClientData client_data) {
+            auto data = static_cast<std::pair<VectorXd*, int*>*>(client_data);
+            VectorXd* cechy = data->first;
+            int* feature_index = data->second;
+
+            if (clang_Location_isFromMainFile(clang_getCursorLocation(c)) == 0) {
+                return CXChildVisit_Continue;
+            }
+
+            // Ekstrakcja cech na podstawie typu kursora
+            CXCursorKind kind = clang_getCursorKind(c);
+            if (kind == CXCursor_FunctionDecl || kind == CXCursor_VarDecl || kind == CXCursor_ParmDecl) {
+                if (*feature_index < cechy->size()) {
+                    (*cechy)(*feature_index) = 1.0;
+                    (*feature_index)++;
+                }
+            }
+
+            return CXChildVisit_Recurse;
+        },
+        &data);
+
+    // Czyszczenie zasobów Clang
+    clang_disposeTranslationUnit(unit);
+    clang_disposeIndex(index);
+
+    // Usunięcie tymczasowego pliku
+    std::remove("temp_code.cpp");
+
+    // Generowanie danych wejściowych na podstawie wektora cech
+    for (int i = 0; i < 1000; ++i) { // Zwiększenie liczby danych testowych
+        VectorXd input = cechy + VectorXd::Random(input_size) * 0.01; // Dodanie losowego szumu
+        inputs.push_back(input);
+    }
+
+    return inputs;
+}
+
+
+// Funkcja generująca modyfikacje na podstawie wyników modelu
+std::string generuj_modyfikacje(const VectorXd& output) {
+    std::wstringstream ws;
+    for (int i = 0; i < output.size(); ++i) {
+        if (output[i] > 0.7) {
+            ws << L"Dodaj funkcję o indeksie " << i << L" z parametrami (int a, int b);\n";
+        }
+        else if (output[i] > 0.5) {
+            ws << L"Zmień parametry funkcji o indeksie " << i << L" na (double x, double y);\n";
+        }
+        else if (output[i] > 0.3) {
+            ws << L"Dodaj klasę o indeksie " << i << L" z metodą void metoda();\n";
+        }
+        else if (output[i] > 0.1) {
+            ws << L"Dodaj zmienną globalną int zmienna_" << i << L";\n";
+        }
+        else if (output[i] > -0.1) {
+            ws << L"Usuń klasę o indeksie " << i << L";\n";
+        }
+        else if (output[i] > -0.3) {
+            ws << L"Usuń zmienną globalną int zmienna_" << i << L";\n";
+        }
+        else if (output[i] > -0.5) {
+            ws << L"Zmień typ zmiennej globalnej int zmienna_" << i << L" na double;\n";
+        }
+        else {
+            ws << L"Usuń funkcję o indeksie " << i << L";\n";
+        }
+    }
+    LogToEditControl(hwndErrorEdit, ws.str());
+
+    return WideStringToString(ws.str());
+}
+
+
+// Funkcja aplikująca modyfikacje do kodu źródłowego
+// Funkcja do obliczania złożoności kodu za pomocą cppcheck
+double calculate_complexity(const std::string& code) {
+    std::ofstream file("temp_code.cpp");
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu kodu.\n");
+        return 0.0;
+    }
+    file << code;
+    file.close();
+
+    std::string command = "cppcheck --enable=all --xml --xml-version=2 temp_code.cpp 2> cppcheck_results.xml";
+    std::system(command.c_str());
+
+    std::ifstream result_file("cppcheck_results.xml");
+    if (!result_file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku z wynikami cppcheck.\n");
+        return 0.0;
+    }
+
+    std::stringstream buffer;
+    buffer << result_file.rdbuf();
+    std::string results = buffer.str();
+    result_file.close();
+
+    // Analiza wyników cppcheck w celu obliczenia złożoności
+    size_t complexity_pos = results.find("complexity=");
+    if (complexity_pos != std::string::npos) {
+        size_t start = results.find("\"", complexity_pos) + 1;
+        size_t end = results.find("\"", start);
+        std::string complexity_str = results.substr(start, end - start);
+        return std::stod(complexity_str);
+    }
+
+    return 0.0;
+}
+
+// Funkcja aplikująca modyfikacje do kodu źródłowego
+void aplikuj_modyfikacje(const std::string& kod_zrodlowy, std::string& zmodyfikowany_kod) {
+    std::lock_guard<std::mutex> lock(kod_mtx);
+
+    // Tworzenie tymczasowego pliku z kodem źródłowym
+    std::ofstream temp_file("temp_code.cpp");
+    if (!temp_file.is_open()) {
+        std::cerr << "Nie można otworzyć pliku temp_code.cpp do zapisu.\n";
+        return;
+    }
+    temp_file << kod_zrodlowy;
+    temp_file.close();
+
+    // Inicjalizacja Clang
+    CXIndex index = clang_createIndex(0, 0);
+    unsigned int options = CXTranslationUnit_None;
+    CXTranslationUnit unit = clang_parseTranslationUnit(index, "temp_code.cpp", nullptr, 0, nullptr, 0, options);
+    if (unit == nullptr) {
+        std::cerr << "Nie można sparsować kodu źródłowego.\n";
+        clang_disposeIndex(index);
+        return;
+    }
+
+    // Przechodzenie po drzewie AST i stosowanie modyfikacji
+    CXCursor cursor = clang_getTranslationUnitCursor(unit);
+    std::string nowy_kod = kod_zrodlowy; // Użycie lokalnej zmiennej do przechowywania zmodyfikowanego kodu
+    clang_visitChildren(
+        cursor,
+        [](CXCursor c, CXCursor parent, CXClientData client_data) {
+            std::string* nowy_kod = static_cast<std::string*>(client_data);
+            CXCursorKind kind = clang_getCursorKind(c);
+
+            if (kind == CXCursor_FunctionDecl) {
+                CXString name = clang_getCursorSpelling(c);
+                std::string function_name = clang_getCString(name);
+                clang_disposeString(name);
+
+                // Przykład modyfikacji: zmiana nazwy funkcji
+                if (function_name == "stara_funkcja") {
+                    std::regex re("void stara_funkcja\\(");
+                    *nowy_kod = std::regex_replace(*nowy_kod, re, "void nowa_funkcja(");
+                }
+            }
+            return CXChildVisit_Recurse;
+        },
+        static_cast<void*>(&nowy_kod));
+
+    // Czyszczenie zasobów Clang
+    clang_disposeTranslationUnit(unit);
+    clang_disposeIndex(index);
+
+    // Aktualizacja zmodyfikowanego kodu
+    zmodyfikowany_kod = nowy_kod;
+}
+
+
+// Funkcja do oceny czytelności kodu za pomocą clang-tidy
+double calculate_readability(const std::string& code) {
+    std::ofstream file("temp_code.cpp");
+    if (!file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku do zapisu kodu.\n");
+        return 0.0;
+    }
+    file << code;
+    file.close();
+
+    std::string command = "clang-tidy temp_code.cpp -- -std=c++17 > clang_tidy_results.txt";
+    std::system(command.c_str());
+
+    std::ifstream result_file("clang_tidy_results.txt");
+    if (!result_file.is_open()) {
+        LogErrorToEditControl(hwndErrorEdit, L"Nie można otworzyć pliku z wynikami clang-tidy.\n");
+        return 0.0;
+    }
+
+    std::stringstream buffer;
+    buffer << result_file.rdbuf();
+    std::string results = buffer.str();
+    result_file.close();
+
+    // Analiza wyników clang-tidy w celu oceny czytelności
+    size_t readability_pos = results.find("readability-");
+    if (readability_pos != std::string::npos) {
+        return 1.0; // Zakładamy, że znalezienie problemów z czytelnością oznacza niską czytelność
+    }
+
+    return 0.0; // Brak problemów z czytelnością
+}
+
+// Struktura przechowująca wyniki oceny
+struct EvaluationResult {
+    double validation_score;
+    double test_score;
+    double performance_score;
+    double logical_test_score;
+    double complexity_score;
+    double readability_score;
+    double total_score;
+    double performance_improvement;
+    std::vector<std::string> static_analysis_issues;
+    double logical_test_coverage;
+
+    // Konstruktor inicjalizujący wszystkie zmienne składowe
+    EvaluationResult()
+        : validation_score(0.0),
+        test_score(0.0),
+        performance_score(0.0),
+        logical_test_score(0.0),
+        complexity_score(0.0),
+        readability_score(0.0),
+        total_score(0.0),
+        performance_improvement(0.0),
+        logical_test_coverage(0.0) {
+    }
+};
+
+// Struktura konfiguracji
+struct Config {
+    int max_attempts;
+    double min_performance_increase;
+    double max_execution_time;
+    double validation_weight;
+    double test_weight;
+    double performance_weight;
+    double logical_test_weight;
+    std::string retry_strategy;
+    double complexity_weight;
+    double readability_weight;
+    std::string config_path;
+
+    // Konstruktor inicjalizujący wszystkie zmienne składowe
+    Config()
+        : max_attempts(10),
+        min_performance_increase(0.1),
+        max_execution_time(5.0),
+        validation_weight(0.4),
+        test_weight(0.4),
+        performance_weight(0.2),
+        logical_test_weight(0.1),
+        retry_strategy("minor_changes"),
+        complexity_weight(0.1),
+        readability_weight(0.1),
+        config_path("C:/Users/MOREK/source/repos/WindowsProject1/WindowsProject1/config.json") {
+    }
+};
+
+// Funkcja do wczytywania konfiguracji z pliku JSON
+Config loadConfigFromFile(const std::string& filename) {
+    Config config;
+    std::ifstream file(filename);
+    if (file.is_open()) {
+        nlohmann::json jsonConfig;
+        file >> jsonConfig;
+        config.max_attempts = jsonConfig.value("max_attempts", 10);
+        config.min_performance_increase = jsonConfig.value("min_performance_increase", 0.1);
+        config.max_execution_time = jsonConfig.value("max_execution_time", 5.0);
+        config.validation_weight = jsonConfig.value("validation_weight", 0.4);
+        config.test_weight = jsonConfig.value("test_weight", 0.4);
+        config.performance_weight = jsonConfig.value("performance_weight", 0.2);
+        config.logical_test_weight = jsonConfig.value("logical_test_weight", 0.1); // Dodano wczytywanie wagi dla testów logicznych
+        config.retry_strategy = jsonConfig.value("retry_strategy", "minor_changes"); // Dodano wczytywanie strategii ponawiania
+        config.complexity_weight = jsonConfig.value("complexity_weight", 0.1); // Dodano wczytywanie wagi dla złożoności
+        config.readability_weight = jsonConfig.value("readability_weight", 0.1); // Dodano wczytywanie wagi dla czytelności
+        config.config_path = jsonConfig.value("config_path", "C:/Users/MOREK/source/repos/WindowsProject1/WindowsProject1/config.json"); // Domyślna wartość ścieżki
+    }
+    else {
+        // Ustawienia domyślne w przypadku braku pliku konfiguracyjnego
+        config.max_attempts = 10;
+        config.min_performance_increase = 0.1;
+        config.max_execution_time = 5.0;
+        config.validation_weight = 0.4;
+        config.test_weight = 0.4;
+        config.performance_weight = 0.2;
+        config.logical_test_weight = 0.1; // Domyślna wartość wagi dla testów logicznych
+        config.retry_strategy = "minor_changes"; // Domyślna wartość strategii ponawiania
+        config.complexity_weight = 0.1; // Domyślna wartość wagi dla złożoności
+        config.readability_weight = 0.1; // Domyślna wartość wagi dla czytelności
+        config.config_path = "C:/Users/MOREK/source/repos/WindowsProject1/WindowsProject1/config.json"; // Domyślna wartość ścieżki
+    }
+    return config;
+}
+
+
+
+
+// Funkcja do obliczania ocen cząstkowych
+EvaluationResult evaluate_modification(const std::string& modified_code, const Config& config, double original_performance) {
+    EvaluationResult result;
+    result.validation_score = validate_code(modified_code) ? 1.0 : 0.0;
+    result.test_score = test_modified_code(modified_code) ? 1.0 : 0.0;
+    result.performance_score = measure_performance(modified_code);
+    result.logical_test_score = run_logical_tests(modified_code) ? 1.0 : 0.0;
+    result.complexity_score = calculate_complexity(modified_code);
+    result.readability_score = calculate_readability(modified_code);
+    result.performance_improvement = result.performance_score - original_performance;
+    result.logical_test_coverage = 1.0; // Placeholder for logical test coverage
+    result.static_analysis_issues = {}; // Placeholder for static analysis issues
+
+    result.total_score = config.validation_weight * result.validation_score +
+        config.test_weight * result.test_score +
+        config.performance_weight * result.performance_score +
+        config.logical_test_weight * result.logical_test_score +
+        config.complexity_weight * result.complexity_score +
+        config.readability_weight * result.readability_score;
+
     return result;
 }
 
 
-// Implementacja funkcji centralController
-void centralController() {
-    float averageTargetVoltage = 0.0;
-    int numAgents = sizeof(agents) / sizeof(agents[0]);
+// Funkcja do automatycznego generowania i aplikowania modyfikacji na podstawie wyników modelu
+void automatyczne_aplikowanie_modyfikacji(const std::string& kod_zrodlowy) {
+    Config config = loadConfigFromFile("config.json");
 
-    for (int i = 0; i < numAgents; i++) {
-        averageTargetVoltage += agents[i].targetVoltage;
-    }
-    averageTargetVoltage /= numAgents;
+    int attempts = 0;
+    double original_performance = measure_performance(kod_zrodlowy);
+    double best_performance = original_performance;
+    std::string best_code = kod_zrodlowy;
+    double best_score = 0.0;
+    int no_improvement_attempts = 0;
 
-    setTargetVoltageForAllAgents(averageTargetVoltage);
-}
+    while (attempts < config.max_attempts) {
+        attempts++;
+        std::wstringstream log_message;
+        log_message << L"Próba numer: " << attempts << L"\n";
+        LogErrorToEditControl(hwndErrorEdit, log_message.str());
 
-// Funkcja ustawiająca docelowe napięcie dla wszystkich agentów na średnią wartość
-void setTargetVoltageForAllAgents(float averageTargetVoltage) {
-    int numAgents = sizeof(agents) / sizeof(agents[0]);
-    for (int i = 0; i < numAgents; i++) {
-        agents[i].targetVoltage = averageTargetVoltage;
-    }
-}
+        VectorXd input = reprezentacja_wektorowa(kod_zrodlowy);
+        auto rnn = std::make_shared<RecurrentNeuralNetwork>(input.size(), 128, 10);
+        rnn->load_model("rnn_model.bin");
+        VectorXd output = rnn->forward(input);
 
-// Implementacja funkcji simulateBrakingEffect
-float simulateBrakingEffect(float rotationalSpeed, float torque, float frictionCoefficient, float brakeTemperature, float brakeWear) {
-    // Model matematyczny: efekt hamowania jest proporcjonalny do prędkości obrotowej i momentu obrotowego,
-    // a odwrotnie proporcjonalny do współczynnika tarcia
-    float simulatedBrakingEffect = (rotationalSpeed * torque) / frictionCoefficient;
+        std::string zmodyfikowany_kod = przekształć_na_kod_zrodlowy(output, attempts);
+        aplikuj_modyfikacje(kod_zrodlowy, zmodyfikowany_kod);
 
-    // Uwzględnienie temperatury hamulców: wyższa temperatura zmniejsza efekt hamowania
-    float temperatureEffect = 1.0 - (brakeTemperature / 100.0);
-    simulatedBrakingEffect *= temperatureEffect;
-
-    // Uwzględnienie zużycia hamulców: większe zużycie zmniejsza efekt hamowania
-    float wearEffect = 1.0 - (brakeWear / 100.0);
-    simulatedBrakingEffect *= wearEffect;
-
-    // Upewnij się, że efekt hamowania nie przekracza maksymalnej wartości
-    if (simulatedBrakingEffect > MAX_BRAKING_EFFECT) {
-        simulatedBrakingEffect = MAX_BRAKING_EFFECT;
-    }
-
-    // Upewnij się, że efekt hamowania nie jest mniejszy niż minimalna wartość
-    const float MIN_BRAKING_EFFECT = 0.0;
-    if (simulatedBrakingEffect < MIN_BRAKING_EFFECT) {
-        simulatedBrakingEffect = MIN_BRAKING_EFFECT;
-    }
-
-    return simulatedBrakingEffect;
-}
-
-// Implementacja funkcji lowPassFilter
-float lowPassFilter(float currentValue, float previousValue, float alpha) {
-    return alpha * currentValue + (1 - alpha) * previousValue;
-}
-
-class SemaphoreGuard {
-public:
-    SemaphoreGuard(SemaphoreHandle_t& semaphore) : semaphore_(semaphore) {
-        xSemaphoreTake(semaphore_, portMAX_DELAY);
-    }
-
-    ~SemaphoreGuard() {
-        xSemaphoreGive(semaphore_);
-    }
-
-private:
-    SemaphoreHandle_t& semaphore_;
-};
-
-void someFunction() {
-    SemaphoreGuard guard(resourceSemaphore);
-    // Wykonaj operację
-    Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
-
-
-// Definicja tablicy agentów
-Agent agents[1] = { {0, 1} }; // Przykładowa inicjalizacja agenta
-
-// Funkcja agenta 1
-void agent1Function(void* pvParameters) {
-    for (;;) {
-        {
-            SemaphoreGuard guard(resourceSemaphore);
-            // Wykonaj operację
-            float voltage = readVoltage();
-            Serial.println("Agent 1: Odczytane napięcie: " + String(voltage));
-
-            // Ustawienie PWM dla agenta 1
-            analogWrite(mosfetPin, map(voltage, 0, 5, 0, 255));
-
-            // Zmniejszenie priorytetu po udanej operacji
-            decreasePriority(agents[0]);
+        if (!validate_code(zmodyfikowany_kod)) {
+            LogErrorToEditControl(hwndErrorEdit, L"Walidacja zmodyfikowanego kodu nie powiodła się.\n");
+            continue;
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-}
-void discretizeStateAgent2(float state, int& discreteState) {
-    float binSize = MAX_CURRENT / NUM_STATE_BINS_AGENT2;
-    discreteState = min(NUM_STATE_BINS_AGENT2 - 1, max(0, int(state / binSize)));
-}
 
-// Funkcja do wyboru akcji dla Agenta 2
-int chooseActionAgent2(int discreteState, float epsilon) {
-    if (random(0, 100) < epsilon * 100) {
-        // Eksploracja: wybierz losową akcję
-        return random(0, NUM_ACTIONS_AGENT2);
-    }
-    else {
-        // Eksploatacja: wybierz najlepszą akcję na podstawie tabeli Q
-        int bestAction = 0;
-        float bestValue = qTableAgent2[discreteState][0];
-        for (int i = 1; i < NUM_ACTIONS_AGENT2; i++) {
-            if (qTableAgent2[discreteState][i] > bestValue) {
-                bestValue = qTableAgent2[discreteState][i];
-                bestAction = i;
-            }
+        if (!test_modified_code(zmodyfikowany_kod)) {
+            LogErrorToEditControl(hwndErrorEdit, L"Testowanie zmodyfikowanego kodu nie powiodło się.\n");
+            continue;
         }
-        return bestAction;
-    }
-}
 
-
-
-float calculateRewardAgent2(float current) {
-    float error = abs(current - MAX_CURRENT);
-    return -error; // Nagroda jest ujemna, im większy błąd, tym mniejsza nagroda
-}
-
-void updateQAgent2(int discreteState, int action, float reward, int nextDiscreteState) {
-    float bestNextActionValue = qTableAgent2[nextDiscreteState][0];
-    for (int i = 1; i < NUM_ACTIONS_AGENT2; i++) {
-        if (qTableAgent2[nextDiscreteState][i] > bestNextActionValue) {
-            bestNextActionValue = qTableAgent2[nextDiscreteState][i];
+        double performance = measure_performance(zmodyfikowany_kod);
+        if (performance < 0 || performance > config.max_execution_time) {
+            LogErrorToEditControl(hwndErrorEdit, L"Mierzenie wydajności zmodyfikowanego kodu nie powiodło się lub przekroczyło maksymalny czas wykonania.\n");
+            continue;
         }
-    }
-    qTableAgent2[discreteState][action] = qTableAgent2[discreteState][action] +
-        learningRate * (reward + discountFactor * bestNextActionValue - qTableAgent2[discreteState][action]);
-}
 
-// Funkcja agenta 2
-void agent2Function(void* pvParameters) {
-    for (;;) {
-        {
-            SemaphoreGuard guard(resourceSemaphore);
-            float current = readExcitationCurrent();
-            Serial.println("Agent 2: Odczytany prąd wzbudzenia: " + String(current));
+        std::wstringstream ws;
+        ws << L"Zmodyfikowany kod został pomyślnie wygenerowany, przetestowany i zmierzony.\n";
+        ws << L"Wydajność zmodyfikowanego kodu: " << performance << L" sekund\n";
+        LogErrorToEditControl(hwndErrorEdit, ws.str());
 
-            int discreteState;
-            discretizeStateAgent2(current, discreteState);
-
-            int action = chooseActionAgent2(discreteState, testEpsilon);
-            analogWrite(excitationBJT1Pin, action * (255 / (NUM_ACTIONS_AGENT2 - 1)));
-
-            float reward = calculateRewardAgent2(current);
-            float nextCurrent = readExcitationCurrent();
-            int nextDiscreteState;
-            discretizeStateAgent2(nextCurrent, nextDiscreteState);
-
-            updateQAgent2(discreteState, action, reward, nextDiscreteState);
-
-            decreasePriority(agents[1]);
-        }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-}
-
-// Funkcja agenta 3
-void agent3Function(void* pvParameters) {
-    for (;;) {
-        {
-            SemaphoreGuard guard(resourceSemaphore);
-            float brakingEffect = readBrakingEffect();
-            Serial.println("Agent 3: Odczytany efekt hamowania: " + String(brakingEffect));
-
-            // Ustawienie PWM dla agenta 3
-            analogWrite(bjtPin1, map(brakingEffect, 0, 5, 0, 255));
-
-            // Zmniejszenie priorytetu po udanej operacji
-            decreasePriority(agents[2]);
-        }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-}
-
-// Funkcja celu dla optymalizatora
-float objectiveFunction(const float* params) {
-    float Kp = params[0];
-    float Ki = params[1];
-    float Kd = params[2];
-    float controlSignal = simulateVoltageControl(Kp, Ki, Kd);
-    float error = calculateError(VOLTAGE_SETPOINT, controlSignal);
-    return abs(error); // Minimalizujemy wartość bezwzględną błędu
-}
-
-// Mapa funkcji naprawczych
-std::map<String, void(*)()> fixFunctions;
-
-// Implementacja funkcji defaultFixFunction
-void defaultFixFunction() {
-    // Przykładowa implementacja domyślnej funkcji naprawczej
-    Serial.println("Wykonano domyślną funkcję naprawczą.");
-
-    // Resetowanie kontrolera napięcia
-    resetVoltageController();
-    Serial.println("Kontroler napięcia został zresetowany.");
-
-    // Zmniejszenie prądu wzbudzenia
-    reduceExcitationCurrent();
-    Serial.println("Prąd wzbudzenia został zmniejszony.");
-
-    // Kalibracja efektu hamowania
-    calibrateBrakingEffect();
-    Serial.println("Efekt hamowania został skalibrowany.");
-
-    // Kalibracja napięcia
-    float rawVoltage = analogRead(A0);
-    float calibratedVoltage = calibrateVoltage(rawVoltage);
-    Serial.println("Napięcie zostało skalibrowane: " + String(calibratedVoltage));
-
-    // Kalibracja prądu
-    float rawCurrent = analogRead(A0;
-    float calibratedCurrent = calibrateCurrent(rawCurrent);
-    Serial.println("Prąd został skalibrowany: " + String(calibratedCurrent));
-
-    // Automatyczne dostrajanie parametrów PID
-    autoTunePID(Kp, Ki, Kd, VOLTAGE_SETPOINT, calibratedVoltage);
-    Serial.println("Parametry PID zostały dostrojone.");
-
-    // Logowanie błędu
-    logError("Wykonano domyślną funkcję naprawczą.");
-    Serial.println("Błąd został zalogowany.");
-}
-
-// Implementacja funkcji resetVoltageController
-void resetVoltageController() {
-    // Przykładowa implementacja resetowania kontrolera napięcia
-    currentVoltage = 0.0;
-    currentError = 0.0;
-    Serial.println("Kontroler napięcia został zresetowany.");
-}
-
-// Implementacja funkcji reduceExcitationCurrent
-void reduceExcitationCurrent() {
-    // Przykładowa implementacja zmniejszenia prądu wzbudzenia
-    analogWrite(excitationBJT1Pin, 0);
-    analogWrite(excitationBJT2Pin, 0);
-    Serial.println("Prąd wzbudzenia został zmniejszony.");
-}
-
-// Implementacja funkcji calibrateBrakingEffect
-void calibrateBrakingEffect() {
-    // Przykładowa implementacja kalibracji efektu hamowania
-    float rawBrakingEffect = analogRead(A0);
-    float calibratedBrakingEffect = rawBrakingEffect * (5.0 / 1023.0);
-    Serial.println("Efekt hamowania został skalibrowany: " + String(calibratedBrakingEffect));
-}
-
-
-// Funkcja kalibracji prądu wzbudzenia
-float calibrateCurrent(float rawCurrent) {
-    // Współczynnik kalibracji
-    const float calibrationFactor = 0.95; // Korekta o -5%
-
-    // Kalibracja surowego prądu
-    float calibratedCurrent = rawCurrent * calibrationFactor;
-
-    // Sprawdzenie, czy skalibrowany prąd mieści się w dopuszczalnym zakresie
-    if (calibratedCurrent < 0) {
-        Serial.println("Błąd: Skalibrowany prąd jest mniejszy niż 0. Ustawiam na 0.");
-        calibratedCurrent = 0;
-    }
-    else if (calibratedCurrent > MAX_CURRENT) {
-        Serial.println("Błąd: Skalibrowany prąd przekracza maksymalny dopuszczalny prąd. Ustawiam na MAX_CURRENT.");
-        calibratedCurrent = MAX_CURRENT;
-    }
-
-    // Wyświetlenie skalibrowanego prądu dla celów debugowania
-    Serial.print("Surowy prąd: ");
-    Serial.print(rawCurrent);
-    Serial.print(" A, Skalibrowany prąd: ");
-    Serial.print(calibratedCurrent);
-    Serial.println(" A");
-
-    return calibratedCurrent;
-}
-
-void autoTunePID(float& Kp, float& Ki, float& Kd, float setpoint, float measuredValue) {
-    float error = calculateError(setpoint, measuredValue);
-
-    // Przykładowa implementacja automatycznego dostrajania parametrów PID
-    // Możesz dostosować te wartości na podstawie swoich wymagań
-    float newKp = Kp;
-    float newKi = Ki;
-    float newKd = Kd;
-
-    // Przykładowa logika dostrajania PID
-    if (error > 0) {
-        newKp += 0.1;
-        newKi += 0.01;
-        newKd += 0.001;
-    }
-    else {
-        newKp -= 0.1;
-        newKi -= 0.01;
-        newKd -= 0.001;
-    }
-
-    // Upewnij się, że wartości PID są w odpowiednich zakresach
-    newKp = constrain(newKp, MIN_KP, MAX_KP);
-    newKi = constrain(newKi, MIN_KI, MAX_KI);
-    newKd = constrain(newKd, MIN_KD, MAX_KD);
-
-    // Aktualizacja parametrów PID
-    Kp = newKp;
-    Ki = newKi;
-    Kd = newKd;
-
-    Serial.println("Automatyczne dostrajanie PID zakończone.");
-    Serial.print("Nowe wartości PID: Kp=");
-    Serial.print(Kp);
-    Serial.print(", Ki=");
-    Serial.print(Ki);
-    Serial.print(", Kd=");
-    Serial.println(Kd);
-}
-
-
-
-// Implementacja funkcji chooseActionAgent3
-float chooseActionAgent3(int discreteState[2], float epsilon) {
-    // Przykładowa implementacja wyboru akcji dla Agenta 3
-    if (random(0, 100) < epsilon * 100) {
-        // Wybór losowej akcji z prawdopodobieństwem epsilon
-        return random(0, NUM_ACTIONS_AGENT3);
-    }
-    else {
-        // Wybór najlepszej akcji na podstawie wartości Q
-        int bestAction = 0;
-        float bestValue = qTableAgent3[discreteState[0]][0];
-        for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-            if (qTableAgent3[discreteState[0]][i] > bestValue) {
-                bestValue = qTableAgent3[discreteState[0]][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-}
-
-// Implementacja funkcji calculateRewardAgent3
-float calculateRewardAgent3(float state[2], float action) {
-    // Normalizacja stanów
-    float normalizedState[2];
-    normalizedState[0] = state[0] / NUM_STATES_AGENT3;
-    normalizedState[1] = state[1] / NUM_STATES_AGENT3;
-
-    // Przykładowa implementacja obliczania nagrody dla Agenta 3
-    float voltage = readVoltage();
-    float error = calculateError(VOLTAGE_SETPOINT, voltage);
-
-    // Obliczanie nagrody
-    float reward = -abs(error);
-
-    // Zapewnienie, że nagroda nie jest ujemna
-    if (reward < 0) {
-        reward = 0;
-    }
-
-    return reward;
-}
-
-// Implementacja funkcji updateQAgent3
-void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
-    // Dyskretyzacja stanów
-    int discreteState[2];
-    int discreteNextState[2];
-    discretizeStateAgent3(state, discreteState);
-    discretizeStateAgent3(nextState, discreteNextState);
-
-    float bestNextActionValue = qTableAgent3[discreteNextState[0]][0];
-    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-        if (qTableAgent3[discreteNextState[0]][i] > bestNextActionValue) {
-            bestNextActionValue = qTableAgent3[discreteNextState[0]][i];
-        }
-    }
-
-    // Aktualizacja wartości Q dla bieżącego stanu i akcji
-    qTableAgent3[discreteState[0]][(int)action] += learningRate * (reward + discountFactor * bestNextActionValue - qTableAgent3[discreteState[0]][(int)action]);
-}
-
-// Implementacja funkcji readTemperature
-float readTemperature() {
-    // Przykładowa implementacja odczytu temperatury
-    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-// Implementacja funkcji readBrakeWear
-float readBrakeWear() {
-    // Przykładowa implementacja odczytu zużycia hamulców
-    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-// Implementacja funkcji readRotationalSpeed
-float readRotationalSpeed() {
-    // Przykładowa implementacja odczytu prędkości obrotowej
-    return analogRead(A0) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-}
-
-// Inicjalizacja tablicy Q
-void initializeQTable() {
-    for (int i = 0; i < NUM_STATES_AGENT3; i++) {
-        for (int j = 0; j < NUM_ACTIONS_AGENT3; j++) {
-            qTableAgent3[i][j] = 0.0;
-        }
-    }
-}
-
-// Implementacja funkcji hillClimbing
-void hillClimbing() {
-    float currentParams[3] = { 1.0, 1.0, 1.0 }; // Początkowe parametry
-    float bestParams[3] = { 1.0, 1.0, 1.0 }; // Inicjalizacja na te same wartości
-    float bestObjective = objectiveFunction(currentParams);
-    float stepSize = 0.1; // Rozmiar kroku dla optymalizacji
-
-    for (int i = 0; i < 100; i++) { // Przykładowa liczba iteracji
-        for (int j = 0; j < 3; j++) {
-            float newParams[3] = { currentParams[0], currentParams[1], currentParams[2] };
-            newParams[j] += stepSize; // Zwiększanie parametru
-            float newObjective = objectiveFunction(newParams);
-
-            if (newObjective < bestObjective) {
-                bestObjective = newObjective;
-                bestParams[j] = newParams[j];
-            }
-            else {
-                newParams[j] -= 2 * stepSize; // Zmniejszanie parametru
-                newObjective = objectiveFunction(newParams);
-
-                if (newObjective < bestObjective) {
-                    bestObjective = newObjective;
-                    bestParams[j] = newParams[j];
-                }
-            }
-        }
-    }
-}
-
-// Aktualizacja bieżących parametrów
-void updateCurrentParams(float currentParams[3], const float bestParams[3]) {
-    currentParams[0] = bestParams[0];
-    currentParams[1] = bestParams[1];
-    currentParams[2] = bestParams[2];
-}
-
-// Zaktualizuj globalne najlepsze parametry
-void updateBestParams(float bestParams[3], const float currentParams[3]) {
-    bestParams[0] = currentParams[0];
-    bestParams[1] = currentParams[1];
-    bestParams[2] = currentParams[2];
-}
-
-// Funkcja do symulacji efektu hamowania
-void simulateBrakingEffect() {
-    float currentParams[3];
-    updateCurrentParams(currentParams, bestParams);
-    updateBestParams(bestParams, currentParams);
-
-    float rotationalSpeed = 3000.0;
-    float torque = 50.0;
-    float frictionCoefficient = 0.8;
-    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-    Serial.println(brakingEffect);
-}
-
-// Implementacja funkcji printOptimizationResults
-void printOptimizationResults() {
-    // Ograniczenie wartości zmiennych do ustalonych zakresów
-    Kp = constrain(Kp, MIN_KP, MAX_KP);
-    Ki = constrain(Ki, MIN_KI, MAX_KI);
-    Kd = constrain(Kd, MIN_KD, MAX_KD);
-    float bestEfficiency = constrain(bestEfficiency, 0.0, 100.0); // Zakładam, że wydajność mieści się w zakresie 0-100
-
-    Serial.println("Optymalizacja zakończona:");
-    Serial.print("Kp: "); Serial.println(Kp);
-    Serial.print("Ki: "); Serial.println(Ki);
-    Serial.print("Kd: "); Serial.println(Kd);
-    Serial.print("Wydajność: "); Serial.println(bestEfficiency);
-}
-
-// Przykładowa implementacja funkcji zwracającej najlepsze parametry
-void getBestParams(float params[3]) {
-    params[0] = 1.0;
-    params[1] = 1.0;
-    params[2] = 1.0;
-}
-
-// Przykładowa implementacja funkcji zwracającej najlepszy wynik funkcji celu
-float getBestObjective() {
-    return 0.0;
-}
-
-// Przykładowa implementacja funkcji sugerującej kolejne parametry
-void suggestNextParameters(float params[3]) {
-    // Możesz dostosować tę funkcję do swoich potrzeb
-}
-
-// Funkcja do odczytu napięcia
-float readVoltage() {
-    int rawValue = analogRead(A0);
-    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
-        Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
-        return -1.0; // Zwróć wartość błędu
-    }
-    return calibrateVoltage(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
-}
-
-// Funkcja do odczytu prądu wzbudzenia
-float readExcitationCurrent() {
-    int rawValue = analogRead(A0);
-    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
-        Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
-        return -1.0; // Zwróć wartość błędu
-    }
-    return calibrateCurrent(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
-}
-
-// Funkcja do odczytu efektu hamowania
-float readBrakingEffect() {
-    int rawValue = analogRead(A0);
-    if (rawValue < 0 || rawValue > ADC_MAX_VALUE) {
-        Serial.println("Błąd: Nieprawidłowa wartość odczytu z ADC");
-        return -1.0; // Zwróć wartość błędu
-    }
-    return calibrateBrakingEffect(rawValue * (VOLTAGE_REFERENCE / ADC_MAX_VALUE));
-}
-
-// Przykładowa implementacja funkcji automatycznego strojenia PID
-void autoTunePID(PID& pid, float setpoint, float measuredValue) {
-    // Możesz dostosować tę funkcję do swoich potrzeb
-}
-
-// Funkcja do obliczania błędu
-float calculateError(float setpoint, float measuredValue) {
-    return setpoint - measuredValue;
-}
-
-
-// Aktualizacja parametrów PID
-void updateControlParameters(float params[3]) {
-    Kp = params[0];
-    Ki = params[1];
-    Kd = params[2];
-    pidController.setTunings(Kp, Ki, Kd);
-}
-
-// Obsługa komunikacji szeregowej
-void handleSerialCommunication() {
-    if (Serial.available() > 0) {
-        String command = Serial.readStringUntil('\n');
-        if (command.startsWith("SET_PARAMS")) {
-            float params[3];
-            sscanf(command.c_str(), "SET_PARAMS %f %f %f", &params[0], &params[1], &params[2]);
-            updateControlParameters(params);
-            Serial.println("Parameters updated");
-        }
-        else if (command.startsWith("GET_STATUS")) {
-            Serial.println("System is running");
+        if (run_logical_tests(zmodyfikowany_kod)) {
+            LogErrorToEditControl(hwndErrorEdit, L"Testy logiczne przeszły pomyślnie.\n");
         }
         else {
-            Serial.println("Unknown command");
+            LogErrorToEditControl(hwndErrorEdit, L"Testy logiczne nie powiodły się.\n");
+            continue;
+        }
+
+        EvaluationResult result = evaluate_modification(zmodyfikowany_kod, config, original_performance);
+
+        // Złożona logika warunkowa
+        if (result.total_score > best_score) {
+            best_score = result.total_score;
+            best_performance = performance;
+            best_code = zmodyfikowany_kod;
+            no_improvement_attempts = 0;
+        }
+        else {
+            no_improvement_attempts++;
+        }
+
+        // Priorytetyzacja kryteriów
+        if (result.performance_improvement > config.min_performance_increase) {
+            best_score += config.performance_weight * result.performance_score;
+        }
+
+        // Strategie decyzyjne
+        if (config.retry_strategy == "aggressive") {
+            if (result.performance_improvement > 0.2) {
+                best_score += 0.1;
+            }
+        }
+        else if (config.retry_strategy == "conservative") {
+            if (result.performance_improvement < 0.1) {
+                best_score -= 0.1;
+            }
+        }
+
+        if (no_improvement_attempts >= config.max_attempts / 2) {
+            LogErrorToEditControl(hwndErrorEdit, L"Wczesne zatrzymanie: brak znaczącej poprawy po określonej liczbie prób.\n");
+            break;
         }
     }
+
+    std::wstringstream final_report;
+    final_report << L"Podsumowanie:\n";
+    final_report << L"Najlepsza wydajność: " << best_performance << L" sekund\n";
+    final_report << L"Najlepszy kod:\n" << StringToWideString(best_code) << L"\n";
+    final_report << L"Ocena: " << best_score << L"\n";
+    LogErrorToEditControl(hwndErrorEdit, final_report.str());
+
+    updateUIAfterModification(hwndEdit, best_code);
 }
 
-// Wybór akcji dla agenta 3
-float chooseActionAgent3(int discreteState[2], float epsilon) {
-    int stateIndex = discreteState[0] * 10 + discreteState[1];
-    if (random(0, 100) < epsilon * 100) {
-        return (float)random(0, NUM_ACTIONS_AGENT3) / (NUM_ACTIONS_AGENT3 - 1);
+void apply_rnn_modifications(const std::string& kod_zrodlowy) {
+    int attempts = 0; // Inicjalizacja zmiennej attempts
+
+    // Generowanie wektora cech na podstawie kodu źródłowego
+    VectorXd input = reprezentacja_wektorowa(kod_zrodlowy);
+
+    // Wywołanie modelu RNN
+    auto rnn = std::make_shared<RecurrentNeuralNetwork>(input.size(), 128, 10);
+    rnn->load_model("rnn_model.bin");
+    VectorXd output = rnn->forward(input);
+
+    // Generowanie modyfikacji na podstawie wyjścia modelu RNN
+    std::string zmodyfikowany_kod = przekształć_na_kod_zrodlowy(output, attempts); // Dodano brakujący argument attempts
+
+    // Aplikowanie modyfikacji do kodu źródłowego
+    aplikuj_modyfikacje(kod_zrodlowy, zmodyfikowany_kod);
+
+    // Walidacja zmodyfikowanego kodu
+    if (!validate_code(zmodyfikowany_kod)) {
+        LogErrorToEditControl(hwndErrorEdit, L"Walidacja zmodyfikowanego kodu nie powiodła się.\n");
+        return;
+    }
+
+    // Testowanie zmodyfikowanego kodu
+    if (!test_modified_code(zmodyfikowany_kod)) {
+        LogErrorToEditControl(hwndErrorEdit, L"Testowanie zmodyfikowanego kodu nie powiodło się.\n");
+        return;
+    }
+
+    // Mierzenie wydajności zmodyfikowanego kodu
+    double performance = measure_performance(zmodyfikowany_kod);
+    if (performance < 0) {
+        LogErrorToEditControl(hwndErrorEdit, L"Mierzenie wydajności zmodyfikowanego kodu nie powiodło się.\n");
+        return;
+    }
+
+    std::wstringstream ws;
+    ws << L"Zmodyfikowany kod został pomyślnie wygenerowany, przetestowany i zmierzony.\n";
+    ws << L"Wydajność zmodyfikowanego kodu: " << performance << L" sekund\n";
+    LogToEditControl(hwndErrorEdit, ws.str());
+
+    // Wywołanie funkcji run_logical_tests
+    if (run_logical_tests(zmodyfikowany_kod)) {
+        LogToEditControl(hwndErrorEdit, L"Testy logiczne przeszły pomyślnie.\n");
     }
     else {
-        float maxQValue = qTableAgent1[stateIndex][0];
-        int bestActionIndex = 0;
-        for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-            if (qTableAgent1[stateIndex][i] > maxQValue) {
-                maxQValue = qTableAgent1[stateIndex][i];
-                bestActionIndex = i;
+        LogErrorToEditControl(hwndErrorEdit, L"Testy logiczne nie powiodły się.\n");
+    }
+
+    // Aktualizacja interfejsu użytkownika po modyfikacji kodu
+    updateUIAfterModification(hwndEdit, zmodyfikowany_kod);
+}
+
+std::string generuj_przykladowy_kod() {
+    std::stringstream ss;
+    ss << "#include <iostream>\n";
+    ss << "void funkcja_" << rand() % 100 << "() {\n";
+    ss << "    std::wstringstream ws;\n";
+    ss << "    ws << L\"Hello, World!\" << std::endl;\n";
+    ss << "    LogToEditControl(hwndErrorEdit, ws.str());\n";
+    ss << "}\n";
+    return ss.str();
+}
+void save_code_to_file(const std::string& filename, const std::string& code) {
+    try {
+        std::ofstream file(filename, std::ios::out | std::ios::binary);
+        if (!file.is_open()) {
+            throw std::ios_base::failure("Nie można otworzyć pliku do zapisu kodu.");
+        }
+        file << code;
+        file.close();
+    }
+    catch (const std::exception& e) {
+        std::wstring error_message = L"Wyjątek podczas zapisu pliku: " + std::wstring(e.what(), e.what() + strlen(e.what()));
+        LogErrorToEditControl(hwndErrorEdit, error_message);
+    }
+}
+
+void integrate_workflow(HWND hwnd) {
+    try {
+        // Generowanie danych treningowych
+        vector<VectorXd> training_data = generuj_dane_treningowe(1000);
+        vector<VectorXd> targets = przygotuj_dane_wyjsciowe("przykładowe pożądane modyfikacje");
+
+        // Inicjalizacja modelu RNN
+        int input_size = 224 * 224 * 3;
+        int hidden_size = 128;
+        int output_size = 10;
+        auto rnn = std::make_shared<RecurrentNeuralNetwork>(input_size, hidden_size, output_size);
+
+        // Parametry pętli głównej
+        double learning_rate = 0.01;
+        int max_iterations = 10; // Maksymalna liczba iteracji
+        int epochs = 100;
+
+        Config config = loadConfigFromFile("config.json");
+        double original_performance = measure_performance(kod_zrodlowy);
+        double best_performance = original_performance;
+        std::string best_code = kod_zrodlowy;
+        double best_score = 0.0;
+
+        for (int iteration = 0; iteration < max_iterations; ++iteration) {
+            // Trenowanie modelu RNN
+            train_with_reinforcement_learning(rnn, training_data, targets, learning_rate, epochs, hwnd);
+
+            // Pobieranie kodu źródłowego z kontrolki edycji
+            int length = GetWindowTextLength(hwndEdit);
+            std::wstring w_kod_zrodlowy(length, L'\0');
+            GetWindowTextW(hwndEdit, &w_kod_zrodlowy[0], length + 1);
+            std::string kod_zrodlowy = WideStringToString(w_kod_zrodlowy);
+
+            // Generowanie modyfikacji kodu
+            VectorXd input = reprezentacja_wektorowa(kod_zrodlowy);
+            VectorXd output = rnn->forward(input);
+            int attempts = 1;
+            std::string zmodyfikowany_kod = przekształć_na_kod_zrodlowy(output, attempts);
+
+            // Walidacja zmodyfikowanego kodu
+            if (!validate_code(zmodyfikowany_kod)) {
+                LogErrorToEditControl(hwndErrorEdit, L"Walidacja zmodyfikowanego kodu nie powiodła się.\n");
+                continue;
+            }
+
+            // Testowanie zmodyfikowanego kodu
+            if (!test_modified_code(zmodyfikowany_kod)) {
+                LogErrorToEditControl(hwndErrorEdit, L"Testowanie zmodyfikowanego kodu nie powiodło się.\n");
+                continue;
+            }
+
+            // Mierzenie wydajności zmodyfikowanego kodu
+            double performance = measure_performance(zmodyfikowany_kod);
+            if (performance < 0 || performance > config.max_execution_time) {
+                LogErrorToEditControl(hwndErrorEdit, L"Mierzenie wydajności zmodyfikowanego kodu nie powiodło się lub przekroczyło maksymalny czas wykonania.\n");
+                continue;
+            }
+
+            // Wywołanie funkcji run_logical_tests
+            if (!run_logical_tests(zmodyfikowany_kod)) {
+                LogErrorToEditControl(hwndErrorEdit, L"Testy logiczne nie powiodły się.\n");
+                continue;
+            }
+
+            // Ocena zmodyfikowanego kodu
+            EvaluationResult result = evaluate_modification(zmodyfikowany_kod, config, original_performance);
+
+            // Decyzja o zastosowaniu zmodyfikowanego kodu
+            if (result.total_score > best_score) {
+                best_score = result.total_score;
+                best_performance = performance;
+                best_code = zmodyfikowany_kod;
+            }
+
+            // Aktualizacja tekstu w kontrolce EDIT
+            updateEditText(hwndEdit, best_code);
+
+            // Uruchamianie inferencji na modelu NPU
+            std::vector<VectorXd> dummy_inputs = generuj_dane_treningowe(1);
+            run_inference_on_npu("model.xml", "model.bin", dummy_inputs, hwndErrorEdit);
+
+            // Optymalizacja modelu OpenVINO
+            optimize_model_with_openvino("model.xml", "model.bin");
+
+            // Wyświetlenie wyników treningu
+            DisplayTrainingResults(hwnd);
+
+            // Sprawdzenie warunku zakończenia (np. osiągnięcie zadowalającego poziomu optymalizacji)
+            if (result.total_score >= config.min_performance_increase) {
+                LogToEditControl(hwndErrorEdit, L"Osiągnięto zadowalający poziom optymalizacji.\n");
+                break;
             }
         }
-        return (float)bestActionIndex / (NUM_ACTIONS_AGENT3 - 1);
+
+        // Finalna aktualizacja interfejsu użytkownika po zakończeniu pętli
+        updateUIAfterModification(hwndEdit, best_code);
+
+        // Automatyczne zapisywanie zmodyfikowanego kodu do pliku
+        save_code_to_file("modified_code.cpp", best_code);
+    }
+    catch (const std::exception& e) {
+        std::wstring error_message = L"Wyjątek podczas integracji workflow: " + std::wstring(e.what(), e.what() + strlen(e.what()));
+        LogErrorToEditControl(hwndErrorEdit, error_message);
     }
 }
 
-// Wykonanie akcji dla agenta 3
-void executeActionAgent3(float action) {
-    int pwmValue = (int)(action * 255.0);
-    pwmValue = constrain(pwmValue, 0, 255);
-    analogWrite(mosfetPin, pwmValue);
-}
 
-// Obliczenie nagrody dla agenta 3
-float calculateRewardAgent3(float state[2], float action) {
-    if (state[0] < 0.0 || state[0] > 1.0 || state[1] < 0.0 || state[1] > 1.0 || action < 0.0 || action > 1.0) {
-        Serial.println("Error: State or action values out of range");
-        return -FLT_MAX;
-    }
-    float target = 1.0;
-    float error = target - (state[0] + state[1]) / 2.0;
-    float reward = -abs(error);
-    if (action > 0.8) {
-        reward -= 0.1 * (action - 0.8);
-    }
-    return reward;
-}
-
-// Aktualizacja wartości Q dla agenta 3
-void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
-    if (state[0] < 0.0 || state[0] > 1.0 || state[1] < 0.0 || state[1] > 1.0 || nextState[0] < 0.0 || nextState[0] > 1.0 || nextState[1] < 0.0 || nextState[1] > 1.0 || action < 0.0 || action > 1.0 || reward < -FLT_MAX || reward > FLT_MAX) {
-        Serial.println("Error: State, action, or reward values out of range");
-        return;
-    }
-    int stateIndex = (int)(state[0] * 10) * 10 + (int)(state[1] * 10);
-    int nextStateIndex = (int)(nextState[0] * 10) * 10 + (int)(nextState[1] * 10);
-    int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
-    float maxNextQValue = qTableAgent1[nextStateIndex][0];
-    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-        if (qTableAgent1[nextStateIndex][i] > maxNextQValue) {
-            maxNextQValue = qTableAgent1[nextStateIndex][i];
-        }
-    }
-    qTableAgent1[stateIndex][actionIndex] += testLearningRate * (reward + testDiscountFactor * maxNextQValue - qTableAgent1[stateIndex][actionIndex]);
-}
-
-
-float chooseActionAgent3(int discreteState[2], float epsilon) {
-    int stateIndex = discreteState[0] * 10 + discreteState[1];
-    if (random(0, 100) < epsilon * 100) {
-        // Eksploracja: wybierz losową akcję
-        return (float)random(0, NUM_ACTIONS_AGENT3) / (NUM_ACTIONS_AGENT3 - 1);
-    }
-    else {
-        // Eksploatacja: wybierz najlepszą akcję
-        float maxQValue = qTableAgent3[stateIndex][0];
-        int bestActionIndex = 0;
-        for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-            if (qTableAgent3[stateIndex][i] > maxQValue) {
-                maxQValue = qTableAgent3[stateIndex][i];
-                bestActionIndex = i;
-            }
-        }
-        return (float)bestActionIndex / (NUM_ACTIONS_AGENT3 - 1);
-    }
-}
-
-// Funkcja przekształcająca akcję na wartość PWM
-void executeActionAgent3(float action) {
-    // Przekształcenie akcji na wartość PWM (zakres 0-255)
-    int pwmValue = (int)(action * 255.0);
-
-    // Zabezpieczenie przed przekroczeniem dozwolonego zakresu
-    if (pwmValue < 0) {
-        pwmValue = 0;
-    }
-    else if (pwmValue > 255) {
-        pwmValue = 255;
-    }
-
-    // Ustawienie wartości PWM na pinie MOSFET
-    analogWrite(mosfetPin, pwmValue);
-}
-
-// Przykładowe funkcje korzystające z executeActionAgent3
-void someFunction() {
-    float action = 1.2; // Przykładowa wartość akcji
-    executeActionAgent3(action);
-}
-
-void anotherFunction() {
-    float action = -0.5; // Przykładowa wartość akcji
-    executeActionAgent3(action);
-}
-
-float calculateRewardAgent3(float state[2], float action) {
-    // Walidacja zakresu wartości
-    if (state[0] < 0.0 || state[0] > 1.0 || state[1] < 0.0 || state[1] > 1.0) {
-        Serial.println("Error: State values out of range");
-        return -FLT_MAX; // Zwracamy dużą wartość ujemną jako karę
-    }
-    if (action < 0.0 || action > 1.0) {
-        Serial.println("Error: Action value out of range");
-        return -FLT_MAX; // Zwracamy dużą wartość ujemną jako karę
-    }
-
-    float target = 1.0; // Docelowy stan
-    float error = target - (state[0] + state[1]) / 2.0;
-    float reward = -abs(error); // Nagroda to negatywna wartość błędu
-
-    // Dodatkowa kara za zbyt dużą akcję
-    if (action > 0.8) {
-        reward -= 0.1 * (action - 0.8);
-    }
-
-    return reward;
-}
-
-void updateQAgent3(float state[2], float action, float reward, float nextState[2]) {
-    // Walidacja zakresu wartości
-    if (state[0] < 0.0 || state[0] > 1.0 || state[1] < 0.0 || state[1] > 1.0) {
-        Serial.println("Error: State values out of range");
-        return;
-    }
-    if (nextState[0] < 0.0 || nextState[0] > 1.0 || nextState[1] < 0.0 || nextState[1] > 1.0) {
-        Serial.println("Error: Next state values out of range");
-        return;
-    }
-    if (action < 0.0 || action > 1.0) {
-        Serial.println("Error: Action value out of range");
-        return;
-    }
-    if (reward < -FLT_MAX || reward > FLT_MAX) {
-        Serial.println("Error: Reward value out of range");
-        return;
-    }
-
-
-
-    // Obliczenie indeksów stanów i akcji
-    int stateIndex = discreteState[0] * NUM_STATES_AGENT3 + discreteState[1];
-    int nextStateIndex = discreteNextState[0] * NUM_STATES_AGENT3 + discreteNextState[1];
-    int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
-
-    // Aktualna wartość Q 
-    float currentQ = qTableAgent3[stateIndex][actionIndex];
-
-    // Maksymalna wartość Q dla następnego stanu
-    float maxNextQ = qTableAgent3[nextStateIndex][0];
-    for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-        if (qTableAgent3[nextStateIndex][i] > maxNextQ) {
-            maxNextQ = qTableAgent3[nextStateIndex][i];
-        }
-    }
-
-    // Aktualizacja wartości Q
-    qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
-}
-
-// Dyskretyzacja stanów
-int discreteState[2];
-int discreteNextState[2];
-discretizeStateAgent3(state, discreteState);
-discretizeStateAgent3(nextState, discreteNextState);
-
-// Obliczenie indeksów stanów i akcji
-int stateIndex = discreteState[0] * NUM_STATES_AGENT3 + discreteState[1];
-int nextStateIndex = discreteNextState[0] * NUM_STATES_AGENT3 + discreteNextState[1];
-int actionIndex = (int)(action * (NUM_ACTIONS_AGENT3 - 1));
-
-// Aktualna wartość Q 
-float currentQ = qTableAgent3[stateIndex][actionIndex];
-
-
-// Aktualizacja wartości Q
-qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
-
-// Walidacja parametrów
-if (Kp < MIN_KP || Kp > MAX_KP || Ki < MIN_KI || Ki > MAX_KI || Kd < MIN_KD || Kd > MAX_KD) {
-    Serial.println("Error: Invalid parameters");
-    return -1.0; // Zwróć wartość błędu
-}
-void someFunction() {
-    float setpoint = VOLTAGE_SETPOINT;
-    float measuredValue = voltage;
-    float error = calculateError(setpoint, measuredValue); // Upewnij się, że calculateError przyjmuje dwa argumenty
-}
-
-// Inicjalizacja kontrolera PID
-PID pidController(Kp, Ki, Kd);
-
-// Symulacja działania kontrolera PID
-float sse = 0.0; // Suma kwadratów błędów
-for (int i = 0; i < 10; i++) {
-    float measuredValue = measuredValues[i];
-    float error = setpoint - measuredValue;
-    float controlSignal = pidController.compute(setpoint, measuredValue);
-
-    // Aktualizacja sumy kwadratów błędów
-    sse += error * error;
-}
-
-// Uwzględnienie minimalnego hamowania przy wzbudzeniu do 25 amperów
-float excitationCurrent = 25.0; // Przykładowa wartość wzbudzenia
-float brakingEffect = simulateBrakingEffect(3000.0, 50.0, 0.8); // Przykładowe wartości prędkości obrotowej, momentu obrotowego i współczynnika tarcia
-if (excitationCurrent >= MAX_CURRENT) {
-    sse += (MAX_BRAKING_EFFECT - brakingEffect) * (MAX_BRAKING_EFFECT - brakingEffect);
-}
-
-// Zwróć odwrotność SSE, ponieważ chcemy maksymalizować funkcję celu
-return 1.0 / sse;
-
-// Symulacja systemu z użyciem parametrów PID
-float voltageError = simulateVoltageControl(Kp, Ki, Kd);
-float excitationCurrentError = simulateExcitationControl();
-brakingEffect = simulateBrakingEffect(3000.0, 50.0, 0.8);
-
-// Funkcja celu: minimalizacja błędu napięcia, minimalizacja błędu prądu wzbudzenia i minimalizacja hamowania
-float calculateObjective(float voltageError, float excitationCurrentError, float brakingEffect) {
-    float objective = -voltageError - excitationCurrentError - brakingEffect;
-    return objective;
-}
-
-// Implementacja funkcji simulateVoltageControl
-float simulateVoltageControl(float Kp, float Ki, float Kd) {
-    float setpoint = 230.0; // Docelowe napięcie w woltach
-    float measuredValue = readVoltage();
-    float error = setpoint - measuredValue;
-    static float integral = 0.0;
-    static float previousError = 0.0;
-
-    integral += error * (1.0 / controlFrequency);
-    float derivative = (error - previousError) * controlFrequency;
-    previousError = error;
-
-    float controlSignal = Kp * error + Ki * integral + Kd * derivative;
-    return controlSignal;
-}
-
-// Implementacja funkcji simulateExcitationControl
-float simulateExcitationControl() {
-    // Przykładowe wartości dla symulacji
-    float excitationCurrent = 0.0;
-    float targetCurrent = 10.0; // Docelowy prąd wzbudzenia
-    float controlSignal = 0.0;
-    float error = 0.0;
-    float previousError = 0.0;
-    float integral = 0.0;
-    float derivative = 0.0;
-    float dt = 0.1; // Przykładowy krok czasowy
-
-    // Parametry PID
-    float Kp = 1.0;
-    float Ki = 0.1;
-    float Kd = 0.01;
-
-    // Ograniczenia prądu wzbudzenia
-    float maxExcitationCurrent = MAX_CURRENT;
-    float minExcitationCurrent = 0.0;
-
-    // Pętla symulacyjna
-    for (int i = 0; i < 100; i++) {
-        // Oblicz błąd
-        error = targetCurrent - excitationCurrent;
-
-        // Oblicz całkę
-        integral += error * dt;
-
-        // Oblicz pochodną
-        derivative = (error - previousError) / dt;
-
-        // Oblicz sygnał sterujący (PID)
-        controlSignal = Kp * error + Ki * integral + Kd * derivative;
-
-        // Aktualizuj prąd wzbudzenia
-        excitationCurrent += controlSignal * dt;
-
-        // Ogranicz prąd wzbudzenia do dopuszczalnych wartości
-        if (excitationCurrent > maxExcitationCurrent) {
-            excitationCurrent = maxExcitationCurrent;
-        }
-        else if (excitationCurrent < minExcitationCurrent) {
-            excitationCurrent = minExcitationCurrent;
-        }
-
-        // Aktualizuj poprzedni błąd
-        previousError = error;
-
-        // Debugowanie: wyświetlenie aktualnych wartości
-        Serial.print("Czas: ");
-        Serial.print(i * dt);
-        Serial.print("s, Prąd wzbudzenia: ");
-        Serial.print(excitationCurrent);
-        Serial.print("A, Błąd: ");
-        Serial.println(error);
-
-        // Logowanie danych do EEPROM co 10 iteracji
-        if (i % 10 == 0) {
-            int address = i * sizeof(float);
-            EEPROM.put(address, excitationCurrent);
-        }
-
-        // Dynamiczne dostosowywanie parametrów PID (przykładowa logika)
-        if (i % 20 == 0) {
-            Kp += 0.1;
-            Ki += 0.01;
-            Kd += 0.005;
-        }
-    }
-
-    return excitationCurrent;
-}
-
-// Przykładowa funkcja symulująca efekt hamowania bez czujników
-float readBrakingEffect(float load) {
-    // Przykładowa prędkość obrotowa w RPM przy braku obciążenia
-    float baseRotationalSpeed = 500.0;
-
-    // Przykładowy moment obrotowy w Nm
-    float torque = 50.0;
-
-    // Przykładowy współczynnik tarcia
-    float frictionCoefficient = 0.8;
-
-    // Dostosowanie prędkości obrotowej w zależności od obciążenia
-    float rotationalSpeed = baseRotationalSpeed * (1.0 - load);
-    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-
-    // Zakładamy, że mniejsza wartość efektu hamowania jest lepsza
-    // Zastosowanie funkcji penalizującej większe wartości
-    float penalizedBrakingEffect = 1.0 / (1.0 + brakingEffect);
-
-    return penalizedBrakingEffect;
-}
-
-// Dodatkowa korekta na podstawie pomiarów
-if (calibratedVoltage > 5.0) {
-    calibratedVoltage = 5.0; // Ograniczenie maksymalnego napięcia
-}
-else if (calibratedVoltage < 0.0) {
-    calibratedVoltage = 0.0; // Ograniczenie minimalnego napięcia
-}
-
-return calibratedVoltage;
-
-// Definicje stałych
-#define TEMPERATURE_COEFFICIENT 0.98 // Współczynnik kalibracji dla temperatury
-#define WEAR_COEFFICIENT 0.95 // Współczynnik kalibracji dla zużycia hamulców
-#define SPEED_COEFFICIENT 1.01 // Współczynnik kalibracji dla prędkości obrotowej
-#define MAX_CURRENT 25
-#define MAX_BRAKING_EFFECT 100.0
-#define ADC_MAX_VALUE 1023
-#define VOLTAGE_REFERENCE 5.0
-
-// Funkcja odczytu temperatury (przykładowa implementacja)
-float readTemperature() {
-    return 25.0; // 25 stopni Celsjusza
-}
-
-// Funkcja odczytu zużycia hamulców (przykładowa implementacja)
-float readBrakeWear() {
-    static float brakeWear = 0.8; // Początkowa wartość zużycia hamulców (80%)
-    brakeWear += random(-5, 6) / 100.0; // Losowa zmiana w zakresie -0.05 do 0.05
-    brakeWear = constrain(brakeWear, 0.0, 1.0); // Ograniczenie wartości do zakresu 0-1 (0-100%)
-    return brakeWear;
-}
-
-// Funkcja odczytu prędkości obrotowej (przykładowa implementacja)
-float readRotationalSpeed() {
-    return 3000.0; // 3000 RPM
-}
-
-// Funkcja kalibracji efektu hamowania
-float calibrateBrakingEffect(float rawBrakingEffect) {
-    const float calibrationFactor = 0.9; // Korekta o -10%
-    float calibratedBrakingEffect = rawBrakingEffect * calibrationFactor;
-
-    // Sprawdzenie, czy skalibrowany efekt hamowania mieści się w dopuszczalnym zakresie
-    if (calibratedBrakingEffect < 0) {
-        Serial.println("Błąd: Skalibrowany efekt hamowania jest mniejszy niż 0. Ustawiam na 0.");
-        calibratedBrakingEffect = 0;
-    }
-    else if (calibratedBrakingEffect > MAX_BRAKING_EFFECT) {
-        Serial.println("Błąd: Skalibrowany efekt hamowania przekracza maksymalny dopuszczalny efekt. Ustawiam na MAX_BRAKING_EFFECT.");
-        calibratedBrakingEffect = MAX_BRAKING_EFFECT;
-    }
-
-    // Wyświetlenie skalibrowanego efektu hamowania dla celów debugowania
-    Serial.print("Surowy efekt hamowania: ");
-    Serial.print(rawBrakingEffect);
-    Serial.print(" A, Skalibrowany efekt hamowania: ");
-    Serial.print(calibratedBrakingEffect);
-    Serial.println(" A");
-
-    // Minimalizacja efektu hamowania
-    float minimizedBrakingEffect = minimizeBrakingEffect(calibratedBrakingEffect);
-
-    // Wyświetlenie zminimalizowanego efektu hamowania dla celów debugowania
-    Serial.print("Zminimalizowany efekt hamowania: ");
-    Serial.print(minimizedBrakingEffect);
-    Serial.println(" A");
-
-    return minimizedBrakingEffect;
-}
-
-// Funkcja minimalizacji efektu hamowania
-float minimizeBrakingEffect(float calibratedBrakingEffect) {
-    const float minimizationFactor = 0.8; // Korekta o -20%
-    float minimizedBrakingEffect = calibratedBrakingEffect * minimizationFactor;
-
-    // Sprawdzenie, czy zminimalizowany efekt hamowania mieści się w dopuszczalnym zakresie
-    if (minimizedBrakingEffect < 0) {
-        minimizedBrakingEffect = 0;
-    }
-    else if (minimizedBrakingEffect > MAX_BRAKING_EFFECT) {
-        minimizedBrakingEffect = MAX_BRAKING_EFFECT;
-    }
-
-    return minimizedBrakingEffect;
-}
-
-// Funkcja kalibracji prądu
-float calibrateCurrent(float rawCurrent) {
-    float calibratedCurrent = rawCurrent;
-
-    // Dodatkowa korekta na podstawie pomiarów
-    if (calibratedCurrent > MAX_CURRENT) {
-        calibratedCurrent = MAX_CURRENT; // Ograniczenie maksymalnego prądu
-    }
-    else if (calibratedCurrent < 0.0) {
-        calibratedCurrent = 0.0; // Ograniczenie minimalnego prądu
-    }
-
-    return calibratedCurrent;
-}
-
-// Funkcja kalibracji na podstawie różnych czynników
-float calibrateBrakingEffectWithFactors(float rawBrakingEffect, float temperature, float brakeWear, float rotationalSpeed) {
-    float temperatureFactor = (temperature > 30.0) ? TEMPERATURE_COEFFICIENT : 1.0;
-    float wearFactor = (brakeWear > 0.7) ? WEAR_COEFFICIENT : 1.0;
-    float speedFactor = (rotationalSpeed > 2500.0) ? SPEED_COEFFICIENT : 1.0;
-
-    float calibratedBrakingEffect = rawBrakingEffect * temperatureFactor * wearFactor * speedFactor;
-    calibratedBrakingEffect *= 1.02; // Dodatkowa korekta o 2%
-
-    return calibratedBrakingEffect;
-}
-
-// Przykładowa implementacja odczytu napięcia z pinu analogowego
-float readVoltage() {
-    int rawValue = analogRead(muxInputPin);
-    float voltage = (rawValue / (float)ADC_MAX_VALUE) * VOLTAGE_REFERENCE;
-
-    // Użycie filtra dolnoprzepustowego do wygładzenia odczytu napięcia
-    static float previousVoltage = 0.0;
-    float alpha = 0.1; // Przykładowa wartość alpha
-    float filteredVoltage = lowPassFilter(voltage, previousVoltage, alpha);
-    previousVoltage = filteredVoltage;
-
-    return filteredVoltage;
-}
-
-// Funkcja odczytu prądu wzbudzenia
-float readExcitationCurrent() {
-    float rawCurrent = analogRead(0) * (MAX_CURRENT / ADC_MAX_VALUE);
-    float calibratedCurrent = calibrateCurrent(rawCurrent);
-    static float filteredCurrent = 0.0; // Inicjalizacja na 0.0
-    filteredCurrent = lowPassFilter(calibratedCurrent, filteredCurrent, 0.1);
-    return filteredCurrent;
-}
-
-// Funkcja filtra dolnoprzepustowego
-float lowPassFilter(float currentValue, float previousValue, float alpha) {
-    return alpha * currentValue + (1 - alpha) * previousValue;
-}
-
-// Funkcja odczytu efektu hamowania
-float readBrakingEffect() {
-    float rawBrakingEffect = analogRead(0) * (MAX_BRAKING_EFFECT / ADC_MAX_VALUE);
-    float calibratedBrakingEffect = calibrateBrakingEffect(rawBrakingEffect);
-    static float filteredBrakingEffect = 0.0; // Inicjalizacja na 0.0
-    filteredBrakingEffect = lowPassFilter(calibratedBrakingEffect, filteredBrakingEffect, 0.1);
-    return filteredBrakingEffect;
-}
-
-class PID {
-public:
-    PID(float kp, float ki, float kd) : Kp(kp), Ki(ki), Kd(kd), prevError(0), integral(0) {}
-
-    float compute(float setpoint, float measuredValue) {
-        float error = setpoint - measuredValue;
-        integral += error;
-        float derivative = error - prevError;
-        float output = Kp * error + Ki * integral + Kd * derivative;
-        prevError = error;
-        return output;
-    }
-
-    void setTunings(float kp, float ki, float kd) {
-        Kp = kp;
-        Ki = ki;
-        Kd = kd;
-    }
-
-private:
-    float Kp, Ki, Kd;
-    float prevError;
-    float integral;
-};
-
-// Przykładowa funkcja sugerująca nowe parametry z użyciem optymalizacji Bayesowskiej
-void suggestNextParameters(float params[3]) {
-    // Inicjalizacja optymalizatora Bayesowskiego
-    BayesOptimizer optimizer;
-
-    // Definicja zakresów dla parametrów
-    optimizer.setBounds(0, 0.0, 5.0); // Zakres dla parametru 0 (Kp)
-    optimizer.setBounds(1, 0.0, 1.0); // Zakres dla parametru 1 (Ki)
-    optimizer.setBounds(2, 0.0, 2.0); // Zakres dla parametru 2 (Kd)
-
-    // Dodanie punktów startowych
-    optimizer.addObservation({ params[0], params[1], params[2] }, objectiveFunction(params));
-
-    // Optymalizacja w celu znalezienia najlepszych parametrów
-    std::vector<float> newParams = optimizer.optimize();
-
-    // Aktualizacja parametrów
-    for (int i = 0; i < 3; i++) {
-        params[i] = newParams[i];
-    }
-}
-
-// Przykładowa funkcja ustawiająca najlepsze parametry
-void getBestParams(float params[3]) {
-    // Tutaj można ustawić najlepsze parametry w odpowiednich zmiennych globalnych lub strukturach
-    Serial.print("Best Params: ");
-    Serial.print(params[0]);
-    Serial.print(", ");
-    Serial.print(params[1]);
-    Serial.print(", ");
-    Serial.println(params[2]);
-}
-
-float getBestObjective() {
-    return 1.0; // Przykładowa najlepsza wartość funkcji celu
-}
-
-void autoTunePID(PID & pid, float setpoint, float measuredValue) {
-    // Przykładowa implementacja auto-strojenia
-    // Można użyć różnych metod, np. Ziegler-Nichols, Hill Climbing, itp.
-    float bestKp = 0, bestKi = 0, bestKd = 0;
-    float bestError = FLT_MAX;
-
-    for (float kp = 0; kp < 10; kp += 0.1) {
-        for (float ki = 0; ki < 1; ki += 0.1) {
-            for (float kd = 0; kd < 2; kd += 0.1) {
-                pid.setTunings(kp, ki, kd);
-                float error = simulateSystem(pid, setpoint, measuredValue);
-                if (error < bestError) {
-                    bestError = error;
-                    bestKp = kp;
-                    bestKi = ki;
-                    bestKd = kd;
-                }
-            }
-        }
-    }
-    pid.setTunings(bestKp, bestKi, bestKd);
-}
-
-float simulateSystem(PID & pid, float setpoint, float measuredValue) {
-    float error = 0.0;
-    float previousError = 0.0;
-    float integral = 0.0;
-    unsigned long previousMillis = millis();
-    const long interval = 10; // Interwał w milisekundach
-
-    for (int i = 0; i < 100; i++) {
-        unsigned long currentMillis = millis();
-        if (currentMillis - previousMillis >= interval) {
-            previousMillis = currentMillis;
-
-            float currentError = setpoint - measuredValue;
-            integral += currentError;
-            float derivative = currentError - previousError;
-            float output = pid.compute(setpoint, measuredValue);
-
-            // Wykonanie akcji na podstawie wyjścia PID
-            analogWrite(mosfetPin, constrain(output, 0, 255));
-
-            // Aktualizacja wartości zmierzonej
-            measuredValue = readVoltage();
-            error += abs(currentError);
-            previousError = currentError;
-        }
-    }
-
-    return error;
-}
-
-// Funkcja symulująca lub testująca kontrolę PID
-float simulatePIDControl() {
-    PID pid(Kp, Ki, Kd);
-    return simulateSystem(pid, VOLTAGE_SETPOINT, readVoltage());
-}
-
-// Definicje zmiennych globalnych
-float voltageIn[2] = { 0 };
-float currentIn[2] = { 0 };
-float externalVoltage = 0.0;
-float externalCurrent = 0.0;
-float efficiency = 0.0;
-float efficiencyPercent = 0.0;
-float voltageDrop = 0.0;
-ESP8266WebServer server(80);
-Adafruit_SH1106 display(OLED_RESET);
-
-int lastAction = 0;
-
-// Definicje zmiennych globalnych dla PID
-const float Kp_max = 5.0;
-
-// Deklaracja zmiennej globalnej
-float LOAD_THRESHOLD = 0.5;
-
-// Dodatkowe zmienne globalne
-float previousError = 0;
-float integral = 0;
-const float COMPENSATION_FACTOR = 0.1;
-float epsilon = 0.3;
-
-// Definicje zmiennych globalnych dla agenta 1
-float qTableAgent1[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD][NUM_ACTIONS];
-float stateAgent1[2] = { 0.0, 0.0 }; // Stan agenta 1: [błąd, obciążenie]
-float actionAgent1 = 0.0; // Akcja agenta 1
-
-// Funkcja aktualizująca tablicę Q-learning dla agenta 1
-void updateQAgent1(float state[2], float action, float reward, float nextState[2]) {
-    int discreteState[2];
-    int discreteNextState[2];
-
-    // Dyskretyzacja stanów
-    discretizeStateAgent1(state, discreteState);
-    discretizeStateAgent1(nextState, discreteNextState);
-
-    // Oblicz indeksy stanów
-    int stateIndex = discreteState[0] * NUM_STATE_BINS_LOAD + discreteState[1];
-    int nextStateIndex = discreteNextState[0] * NUM_STATE_BINS_LOAD + discreteNextState[1];
-    int actionIndex = (int)action;
-
-    // Oblicz wartość Q dla obecnego stanu i akcji
-    float currentQ = qTableAgent1[stateIndex][actionIndex];
-
-    // Znajdź maksymalną wartość Q dla następnego stanu
-    float maxNextQ = qTableAgent1[nextStateIndex][0];
-    for (int i = 1; i < NUM_ACTIONS_AGENT1; i++) {
-        if (qTableAgent1[nextStateIndex][i] > maxNextQ) {
-            maxNextQ = qTableAgent1[nextStateIndex][i];
-        }
-    }
-
-    // Zaktualizuj wartość Q
-    qTableAgent1[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
-}
-
-// Funkcja dyskretyzująca stan agenta 1
-void discretizeStateAgent1(float state[2], int discreteState[2]) {
-    discreteState[0] = (int)((state[0] - MIN_ERROR) / (MAX_ERROR - MIN_ERROR) * NUM_STATE_BINS_ERROR);
-    discreteState[1] = (int)((state[1] - MIN_LOAD) / (MAX_LOAD - MIN_LOAD) * NUM_STATE_BINS_LOAD);
-}
-
-// Funkcja wybierająca akcję dla agenta 1
-float chooseActionAgent1(int discreteState[2], float epsilon) {
-    if (random(0, 100) < epsilon * 100) {
-        return random(0, NUM_ACTIONS_AGENT1);
-    }
-    else {
-        int stateIndex = discreteState[0] * NUM_STATE_BINS_LOAD + discreteState[1];
-        int bestAction = 0;
-        float bestValue = qTableAgent1[stateIndex][0];
-        for (int i = 1; i < NUM_ACTIONS_AGENT1; i++) {
-            if (qTableAgent1[stateIndex][i] > bestValue) {
-                bestValue = qTableAgent1[stateIndex][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-}
-
-// Funkcja wykonująca akcję dla agenta 1
-void executeActionAgent1(float action) {
-    int actionIndex = (int)action;
-
-    switch (actionIndex) {
-    case 0:
-        // Przykładowa akcja: zwiększenie napięcia
-        increaseVoltage();
-        break;
-    case 1:
-        // Przykładowa akcja: zwiększenie prądu wzbudzenia
-        // Kod usunięty
-        break;
-    case 2:
-        // Przykładowa akcja: zmniejszenie prądu wzbudzenia
-        // Kod usunięty
-        break;
-    case 3:
-        // Przykładowa akcja: resetowanie kontrolera napięcia
-        // Kod usunięty
-        break;
-    default:
-        // Domyślna akcja: brak działania
-        Serial.println("Nieznana akcja");
-        break;
-    }
-}
-
-// Funkcja ucząca agenta 1
-void trainAgent1() {
-    // Oblicz nagrodę na podstawie wydajności
-    float reward = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-
-    // Oblicz następny stan
-    float nextState[2] = { VOLTAGE_SETPOINT - currentVoltage, currentCurrent };
-
-    // Zaktualizuj tablicę Q-learning
-    updateQAgent1(stateAgent1, actionAgent1, reward, nextState);
-
-    // Zaktualizuj stan agenta
-    stateAgent1[0] = nextState[0];
-    stateAgent1[1] = nextState[1];
-
-    // Wybierz nową akcję na podstawie zaktualizowanego stanu
-    actionAgent1 = chooseActionAgent1(stateAgent1, epsilon);
-
-    // Wykonaj wybraną akcję
-    executeActionAgent1(actionAgent1);
-}
-
-// Funkcja obliczająca wydajność
-float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
-    float inputPower = voltageIn * currentIn;
-    float outputPower = externalVoltage * externalCurrent;
-
-    if (inputPower == 0) {
+int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
+    // Inicjalizacja GDI+
+    GdiplusStartupInput gdiplusStartupInput;
+    ULONG_PTR gdiplusToken;
+    GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+    // Rejestracja klasy okna
+    const wchar_t CLASS_NAME[] = L"Sample Window Class";
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = CLASS_NAME;
+    RegisterClassW(&wc);
+
+    // Tworzenie okna
+    hMainWindow = CreateWindowExW(
+        0,
+        CLASS_NAME,
+        L"Trenowanie modelu",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        NULL,
+        NULL,
+        hInstance,
+        NULL
+    );
+
+    if (hMainWindow == NULL) {
         return 0;
     }
 
-    return outputPower / inputPower;
-}
+    ShowWindow(hMainWindow, nCmdShow);
 
-// Zmienne globalne dla komunikacji między agentami
-bool agent2IncreasedExcitation = false;
-bool agent3MinimizedBraking = false;
-float agent2ExcitationCurrent = 0.0;
+    // Inicjalizacja danych treningowych
+    initializeTrainingData();
 
-// Funkcja komunikacji między agentami
-void communicateBetweenAgents() {
-    if (agent2IncreasedExcitation) {
-        Serial.println("Agent 2 zwiększył prąd wzbudzenia");
-        // Przykład: agent 1 reaguje na zwiększenie prądu wzbudzenia przez agenta 2
-        autoTunePID(Kp, Ki, Kd, VOLTAGE_SETPOINT, currentVoltage); // Wywołanie funkcji autoTunePID
-        agent2IncreasedExcitation = false; // Resetowanie flagi
-    }
-    if (agent3MinimizedBraking) {
-        Serial.println("Agent 3 zminimalizował hamowanie");
-        // Przykład: agent 1 reaguje na minimalizowanie hamowania przez agenta 3
-        autoTunePID(Kp, Ki, Kd, VOLTAGE_SETPOINT, currentVoltage); // Wywołanie funkcji autoTunePID
-        agent3MinimizedBraking = false; // Resetowanie flagi
-    }
-}
+    // Inicjalizacja monitorowania
+    initializeMonitoring();
 
+    // Generowanie kodu źródłowego
+    std::string kod_zrodlowy = generuj_przykladowy_kod();
+    std::string pozadane_modyfikacje = "przykładowe pożądane modyfikacje";
 
-// Funkcja wykonująca akcję agenta
-void performAction(int agentId, float action) {
-    switch (agentId) {
-    case 1:
-        // Akcje agenta 1
-        switch ((int)action) {
-        case 0: Kp += 0.1; break;
-        case 1: Kp -= 0.1; break;
-        case 2: Ki += 0.1; break;
-        case 3: Ki -= 0.1; break;
-        case 4: Kd += 0.1; break;
-        case 5: Kd -= 0.1; break;
-        default: break;
-        }
-        // Upewnij się, że wartości PID są w odpowiednich zakresach
-        Kp = constrain(Kp, 0.0, 5.0);
-        Ki = constrain(Ki, 0.0, 1.0);
-        Kd = constrain(Kd, 0.0, 2.0);
-        break;
-    case 3:
-        // Akcje agenta 3
-        switch ((int)action) {
-        case 0:
-            analogWrite(mosfetPin, analogRead(mosfetPin) - PWM_INCREMENT);
-            agent3MinimizedBraking = true;
-            break;
-        case 1:
-            analogWrite(mosfetPin, analogRead(mosfetPin) + PWM_INCREMENT);
-            break;
-        default:
-            Serial.println("Nieznana akcja, kara za zwiększenie hamowania");
-            break;
-        }
-        break;
-    default:
-        Serial.println("Nieznany agent");
-        break;
-    }
-}
+    int input_size = 224 * 224 * 3; // 150528
+    int hidden_size = 128;
+    int output_size = 10;
+    vector<VectorXd> inputs = przygotuj_dane_wejsciowe(kod_zrodlowy, input_size);
+    vector<VectorXd> targets = przygotuj_dane_wyjsciowe(pozadane_modyfikacje);
 
-// Funkcja wybierająca akcję dla agenta 3
-float selectActionAgent3(float state[2]) {
-    int stateIndex = (int)(state[0] * NUM_STATE_BINS_ERROR) * NUM_STATE_BINS_LOAD + (int)(state[1] * NUM_STATE_BINS_LOAD);
+    // Trenowanie modelu RNN
+    double learning_rate = 0.01;
+    int epochs = 100;
+    auto rnn = std::make_shared<RecurrentNeuralNetwork>(input_size, hidden_size, output_size);
 
-    if (random(0, 100) < epsilon * 100) {
-        return random(0, NUM_ACTIONS);
-    }
-    else {
-        float bestAction = 0;
-        float maxQ = qTableAgent3[stateIndex][0];
-        for (int i = 1; i < NUM_ACTIONS; i++) {
-            if (qTableAgent3[stateIndex][i] > maxQ) {
-                maxQ = qTableAgent3[stateIndex][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-}
+    // Uruchomienie trenowania w osobnym wątku
+    std::thread training_thread([&]() {
+        train_with_reinforcement_learning(rnn, inputs, targets, learning_rate, epochs, hMainWindow);
 
-// Funkcja aktualizująca tablicę Q-learning dla agenta 3
-void updateQTableAgent3(float state[2], float action, float reward, float nextState[2]) {
-    int stateIndex = (int)(state[0] * NUM_STATE_BINS_ERROR + state[1] * NUM_STATE_BINS_LOAD);
-    int nextStateIndex = (int)(nextState[0] * NUM_STATE_BINS_ERROR + nextState[1] * NUM_STATE_BINS_LOAD);
-    int actionIndex = (int)action;
+        // Generowanie modyfikacji kodu
+        VectorXd input = reprezentacja_wektorowa(kod_zrodlowy);
+        VectorXd output = rnn->forward(input);
+        int attempts = 1; // Liczba prób
+        std::string zmodyfikowany_kod = przekształć_na_kod_zrodlowy(output, attempts);
 
-    // Oblicz wartość Q dla obecnego stanu i akcji
-    float currentQ = qTableAgent3[stateIndex][actionIndex];
+        // Aktualizacja tekstu w kontrolce EDIT
+        updateEditText(hwndEdit, zmodyfikowany_kod);
+        });
 
-    // Znajdź maksymalną wartość Q dla następnego stanu
-    float maxNextQ = qTableAgent3[nextStateIndex][0];
-    for (int i = 1; i < NUM_ACTIONS; i++) {
-        if (qTableAgent3[nextStateIndex][i] > maxNextQ) {
-            maxNextQ = qTableAgent3[nextStateIndex][i];
-        }
+    // Wątek do wczytywania modelu CNN
+    std::thread load_model_thread([&]() {
+        ov::Core core;
+        std::shared_ptr<ov::Model> cnn_model;
+        load_cnn_model("model.xml", "model.bin", core, cnn_model);
+        });
+
+    // Wątek do uruchamiania inferencji na modelu CNN
+    std::thread inference_thread([&]() {
+        std::shared_ptr<ov::Model> cnn_model;
+        std::vector<float> input_data; // Przykładowe dane wejściowe
+        std::vector<float> output_data;
+        run_cnn_inference(cnn_model, input_data, output_data);
+        });
+
+    // Wątek do optymalizacji modelu OpenVINO
+    std::thread optimize_model_thread([&]() {
+        optimize_model_with_openvino("model.xml", "model.bin");
+        });
+
+    // Detach wątki
+    training_thread.detach();
+    load_model_thread.detach();
+    inference_thread.detach();
+    optimize_model_thread.detach();
+
+    // Przykład modyfikacji kodu
+    {
+        std::lock_guard<std::mutex> lock(kod_mtx);
+        kod_zrodlowy = "Nowy kod źródłowy";
+        kod_zmieniony = true; // Ustawienie flagi zmiany kodu
     }
 
-    // Zaktualizuj wartość Q
-    qTableAgent3[stateIndex][actionIndex] = currentQ + learningRate * (reward + discountFactor * maxNextQ - currentQ);
-}
-
-// Funkcja ucząca agenta 3
-void trainAgent3() {
-    // Oblicz karę na podstawie zwiększonego hamowania
-    float reward = -analogRead(mosfetPin); // Przykładowa kara za zwiększone hamowanie
-
-    // Uwzględnij informację od Agenta 2
-    if (agent2IncreasedExcitation) {
-        reward -= 10; // Dodatkowa kara za zwiększenie prądu wzbudzenia przez Agenta 2
+    // Pętla komunikatów
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 
-    // Oblicz następny stan
-    float nextState[2] = { VOLTAGE_SETPOINT - currentVoltage, currentCurrent };
-
-    // Zaktualizuj tablicę Q-learning
-    updateQTableAgent3(stateAgent3, actionAgent3, reward, nextState);
-
-    // Zaktualizuj stan agenta
-    stateAgent3[0] = nextState[0];
-    stateAgent3[1] = nextState[1];
-
-    // Wybierz nową akcję na podstawie zaktualizowanego stanu
-    actionAgent3 = selectActionAgent3(stateAgent3);
-
-    // Wykonaj wybraną akcję
-    performAction(3, actionAgent3);
-}
-
-// Funkcja symulująca działanie systemu stabilizatora napięcia
-float simulateSystem(float Kp, float Ki, float Kd) {
-    float setpoint = 230.0; // Docelowe napięcie
-    currentVoltage = 0.0; // Użycie globalnej zmiennej
-    currentError = 0.0; // Użycie globalnej zmiennej
-    float previousError = 0.0;
-    float integral = 0.0;
-    float derivative = 0.0;
-    float controlSignal = 0.0;
-    float simulatedEfficiency = 0.0;
-    int simulationSteps = 100; // Liczba kroków symulacji
-    float timeStep = 0.1; // Krok czasowy symulacji
-
-    // Implementacja symulacji
-    for (int i = 0; i < simulationSteps; i++) {
-        currentError = setpoint - currentVoltage;
-        integral += currentError * timeStep;
-        derivative = (currentError - previousError) / timeStep;
-        controlSignal = Kp * currentError + Ki * integral + Kd * derivative;
-        currentVoltage += controlSignal * timeStep; // Przykładowa aktualizacja napięcia
-        previousError = currentError;
-        simulatedEfficiency += abs(currentError); // Przykładowa metryka wydajności
-    }
-
-    return simulatedEfficiency / simulationSteps; // Zwracanie średniej wydajności
-}
-
-
-// Parametry modelu stabilizatora
-float systemGain = 1.0;
-float systemTimeConstant = 1.0;
-float systemDelay = 0.1;
-
-// Dodane zmienne
-const float Kp_max = 5.0;
-float previousVoltage = 0.0;
-unsigned long tuningStartTime = 0;
-const unsigned long TUNING_TIMEOUT = 30000;
-bool oscillationsDetected = false;
-float excitationGain = 1.0;
-float Ku = 0.0;
-float Tu = 0.0;
-
-// Parametry PID
-float Kp = 2.0, Ki = 0.5, Kd = 1.0;
-float previousError = 0;
-float integral = 0;
-
-
-// Parametry automatycznej optymalizacji
-const unsigned long OPTIMIZATION_INTERVAL = 60000;
-const unsigned long TEST_DURATION = 10000;
-unsigned long lastOptimizationTime = 0;
-
-/// Parametry dyskretyzacji
-const int NUM_STATE_BINS_ERROR = 5;
-const int NUM_STATE_BINS_LOAD = 3;
-const int NUM_STATE_BINS_KP = 5;
-const int NUM_STATE_BINS_KI = 3;
-const int NUM_STATE_BINS_KD = 3;
-
-const int NUM_ACTIONS = 6;
-float epsilon
-
-
-// Zmienne dla optymalizacji bayesowskiej
-BayesOptimizer optimizer;
-float params[3] = { 0.1, 0.9, 0.1 };
-float bounds[3][2] = { {0.01, 0.5}, {0.8, 0.99}, {0.01, 0.3} };
-float bestEfficiency = 0.0;
-
-// Stałe dane w pamięci flash (PROGMEM)
-const char* welcomeMessage PROGMEM = "Witaj w systemie stabilizacji napięcia!";
-
-// Definicje stałych
-#define MAX_EXCITATION_CURRENT 25 // Maksymalny prąd wzbudzenia w amperach
-
-// Funkcja symulująca kontrolę napięcia
-float simulateVoltageControl(float Kp, float Ki, float Kd, float setpoint, float currentVoltage, int simulationSteps, float timeStep) {
-    float currentError, integral = 0, derivative, previousError = 0, controlSignal, simulatedEfficiency;
-
-    for (int i = 0; i < simulationSteps; i++) {
-        currentError = setpoint - currentVoltage;
-        integral += currentError * timeStep;
-        derivative = (currentError - previousError) / timeStep;
-        controlSignal = Kp * currentError + Ki * integral + Kd * derivative;
-
-        // Modelowanie dynamiki systemu z opóźnieniem
-        float delayedControlSignal = controlSignal * exp(-systemDelay / systemTimeConstant);
-        currentVoltage += (systemGain * delayedControlSignal - currentVoltage) * (timeStep / systemTimeConstant);
-
-        previousError = currentError;
-        simulatedEfficiency = 1.0 - abs(currentError / setpoint);
-    }
-
-    return simulatedEfficiency;
-}
-
-// Funkcja kontrolująca MOSFET i trzy tranzystory stabilizatora napięcia
-void controlVoltageRegulator(float voltage, float excitationCurrent) {
-    // Stabilizacja napięcia na poziomie 230V
-    voltage = constrain(voltage, 0.0, 230.0);
-
-    // Kontrola tranzystora MOSFET w zależności od prądu wzbudzenia
-    if (excitationCurrent > LOAD_THRESHOLD) {
-        digitalWrite(mosfetPin, HIGH);
-    }
-    else {
-        digitalWrite(mosfetPin, LOW);
-    }
- 
-#define newPin1 D10
-#define newPin2 D2   
-#define newPin3 D3 
-
-    // Kontrola trzech tranzystorów stabilizatora napięcia
-    analogWrite(newPin1, map(voltage, 0, 230, 0, 255));
-    analogWrite(newPin2, map(voltage, 0, 230, 0, 255));
-    analogWrite(newPin3, map(voltage, 0, 230, 0, 255));
-}
-
-// Funkcja kontrolująca tranzystory dla czterofazowej prądnicy
-void controlExcitationTransistors(float excitationCurrent) {
-    // Sprawdzenie, czy prąd wzbudzenia mieści się w oczekiwanym zakresie
-    if (excitationCurrent < 0 || excitationCurrent > MAX_CURRENT) {
-        Serial.println("Prąd wzbudzenia poza zakresem!");
-        return;
-    }
-    // Definicje stałych i zmiennych
-#define bjtPin4 9 // Przykładowa definicja pinu, zmień na odpowiedni pin
-    int pwmValueBJT4 = 128; // Przykładowa wartość PWM, zmień na odpowiednią wartość
-
-    // Rozdzielenie prądu wzbudzenia na cztery tranzystory BJT
-    float baseCurrentPerTransistor = excitationCurrent / 4.0; // Dzielimy prąd na 4 tranzystory
-
-    // Mapowanie prądu wzbudzenia na wartości PWM dla każdego tranzystora
-    int pwmValueBJT1 = map(baseCurrentPerTransistor, 0, MAX_CURRENT / 4.0, 0, 255);
-    int pwmValueBJT2 = map(baseCurrentPerTransistor, 0, MAX_CURRENT / 4.0, 0, 255);
-    int pwmValueBJT3 = map(baseCurrentPerTransistor, 0, MAX_CURRENT / 4.0, 0, 255);
-    int pwmValueBJT4 = map(baseCurrentPerTransistor, 0, MAX_CURRENT / 4.0, 0, 255);
-
-    // Upewnienie się, że wartości PWM są w zakresie 0-255
-    pwmValueBJT1 = constrain(pwmValueBJT1, 0, 255);
-    pwmValueBJT2 = constrain(pwmValueBJT2, 0, 255);
-    pwmValueBJT3 = constrain(pwmValueBJT3, 0, 255);
-    pwmValueBJT4 = constrain(pwmValueBJT4, 0, 255);
-
-    // Sterowanie czterema tranzystorami BJT za pomocą sygnałów PWM
-    analogWrite(excitationBJT1Pin, pwmValueBJT1);
-    analogWrite(excitationBJT2Pin, pwmValueBJT2);
-    analogWrite(bjtPin3, pwmValueBJT3);
-    analogWrite(bjtPin4, pwmValueBJT4);
-}
-
-// Funkcja obsługująca komendy z portu szeregowego
-void handleSerialCommands() {
-    if (Serial.available()) {
-        String command = Serial.readStringUntil('\n');
-        command.trim(); // Usuwa białe znaki na początku i końcu
-
-        if (command == "START") {
-            // Przykład: obsługa komendy START
-            Serial.println("Komenda START otrzymana");
-            // Dodaj tutaj kod do uruchomienia odpowiedniej funkcji
-        }
-        else if (command == "STOP") {
-            // Przykład: obsługa komendy STOP
-            Serial.println("Komenda STOP otrzymana");
-            // Dodaj tutaj kod do zatrzymania odpowiedniej funkcji
-        }
-        else if (command == "OPTIMIZE") {
-            // Przykład: obsługa komendy OPTIMIZE
-            Serial.println("Komenda OPTIMIZE otrzymana");
-            optimizePID();
-        }
-        else {
-            Serial.println("Nieznana komenda: " + command);
-        }
-    }
-}
-
-// Funkcja automatycznego dostrajania PID
-void autoTunePID() {
-    float Ku = 0.0; // Krytyczny współczynnik wzmocnienia
-    float Tu = 0.0; // Okres oscylacji
-    bool oscillationsDetected = false;
-    unsigned long startTime = millis();
-    unsigned long currentTime;
-    float currentError;
-    float maxError = 0.0;
-    float minError = 0.0;
-
-    // Wstępne ustawienia PID
-    Kp = 1.0;
-    Ki = 0.0;
-    Kd = 0.0;
-
-    // Pętla do wykrywania oscylacji
-    while (!oscillationsDetected && (millis() - startTime) < TUNING_TIMEOUT) {
-        currentTime = millis();
-        currentError = calculateError(VOLTAGE_SETPOINT, readVoltage());
-
-        // Aktualizacja maksymalnego i minimalnego błędu
-        if (currentError > maxError) maxError = currentError;
-        if (currentError < minError) minError = currentError;
-
-        // Sprawdzenie, czy wystąpiły oscylacje
-        if ((maxError - minError) > TOLERANCE) {
-            oscillationsDetected = true;
-            Tu = (currentTime - startTime) / 1000.0; // Okres oscylacji w sekundach
-            Ku = 4.0 * (VOLTAGE_SETPOINT / (maxError - minError)); // Krytyczny współczynnik wzmocnienia
-        }
-
-        float controlSignal = Kp * currentError;
-        analogWrite(mosfetPin, constrain(controlSignal, 0, 255));
-        delay(100); // Opóźnienie dla stabilizacji
-    }
-
-    // Ustawienia PID na podstawie Ziegler-Nichols
-    if (oscillationsDetected) {
-        Kp = 0.6 * Ku;
-        Ki = 2.0 * Kp / Tu;
-        Kd = Kp * Tu / 8.0;
-        Serial.println("Optymalizacja PID zakończona:");
-        Serial.print("Kp: "); Serial.println(Kp);
-        Serial.print("Ki: "); Serial.println(Ki);
-        Serial.print("Kd: "); Serial.println(Kd);
-
-        // Zapisz najlepsze parametry w pamięci EEPROM
-        handlePIDParams(Kp, Ki, Kd, true);
-
-        // Wyślij najlepsze parametry do komputera
-        Serial.print("Zapisane parametry PID: Kp="); Serial.print(Kp);
-        Serial.print(", Ki="); Serial.print(Ki);
-        Serial.print(", Kd="); Serial.println(Kd);
-    }
-    else {
-        Serial.println("Nie udało się wykryć oscylacji w czasie optymalizacji PID.");
-    }
-}
-
-// Funkcja testująca ustawienia PID
-void testPIDSettings() {
-    float efficiency = simulateSystem(Kp, Ki, Kd);
-    Serial.print("Efektywność dla Kp="); Serial.print(Kp);
-    Serial.print(", Ki="); Serial.print(Ki);
-    Serial.print(", Kd="); Serial.println(Kd);
-    Serial.print("Efektywność: "); Serial.println(efficiency);
-}
-
-// Funkcja zapisywania lub odczytywania parametrów PID w pamięci EEPROM
-void handlePIDParams(float& Kp, float& Ki, float& Kd, bool save) {
-    if (save) {
-        EEPROM.put(0, Kp); // Zapisz wartość Kp na początku pamięci EEPROM
-        EEPROM.put(sizeof(float), Ki); // Zapisz wartość Ki po Kp
-        EEPROM.put(2 * sizeof(float), Kd); // Zapisz wartość Kd po Ki
-        EEPROM.commit(); // Zatwierdź zmiany w pamięci EEPROM
-    }
-    else {
-        EEPROM.get(0, Kp); // Odczytaj wartość Kp z początku pamięci EEPROM
-        EEPROM.get(sizeof(float), Ki); // Odczytaj wartość Ki po Kp
-        EEPROM.get(2 * sizeof(float), Kd); // Odczytaj wartość Kd po Ki
-    }
-}
-
-// Funkcja celu dla optymalizatora
-float objectiveFunction(const float* params) {
-    float Kp = params[0];
-    float Ki = params[1];
-    float Kd = params[2];
-    float controlSignal = simulateVoltageControl(Kp, Ki, Kd);
-    float error = calculateError(VOLTAGE_SETPOINT, controlSignal);
-    return abs(error); // Minimalizujemy wartość bezwzględną błędu
-}
-
-// Funkcja aktualizacji sterowania
-void updateControl() {
-    float controlSignal = Kp * currentError;
-    analogWrite(mosfetPin, constrain(controlSignal, 0, 255));
-    delay(100); // Opóźnienie dla stabilizacji
-}
-
-int analogRead(int pin) {
-    // Implementacja odczytu analogowego
-    // W przypadku ESP8266, używamy funkcji analogRead z biblioteki Arduino
-    return ::analogRead(pin);
-}
-
-// Inicjalizacja tablicy Q-learning
-float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS] = { 0 };
-
-// Funkcja konwertująca stan na indeks tablicy Q
-int getStateIndex(float error, float load, float kp, float ki, float kd) {
-    int errorBin = constrain(map(error, MIN_ERROR, MAX_ERROR, 0, NUM_STATE_BINS_ERROR - 1), 0, NUM_STATE_BINS_ERROR - 1);
-    int loadBin = constrain(map(load, MIN_LOAD, MAX_LOAD, 0, NUM_STATE_BINS_LOAD - 1), 0, NUM_STATE_BINS_LOAD - 1);
-    int kpBin = constrain(map(kp, MIN_KP, MAX_KP, 0, NUM_STATE_BINS_KP - 1), 0, NUM_STATE_BINS_KP - 1);
-    int kiBin = constrain(map(ki, MIN_KI, MAX_KI, 0, NUM_STATE_BINS_KI - 1), 0, NUM_STATE_BINS_KI - 1);
-    int kdBin = constrain(map(kd, MIN_KD, MAX_KD, 0, NUM_STATE_BINS_KD - 1), 0, NUM_STATE_BINS_KD - 1);
-
-    return errorBin + NUM_STATE_BINS_ERROR * (loadBin + NUM_STATE_BINS_LOAD * (kpBin + NUM_STATE_BINS_KP * (kiBin + NUM_STATE_BINS_KI * kdBin)));
-}
-
-// Funkcja wybierająca akcję na podstawie strategii epsilon-greedy
-int chooseAction(int stateIndex) {
-    if (random(0, 100) < epsilon * 100) {
-        return random(0, NUM_ACTIONS); // Wybór losowej akcji
-    }
-    else {
-        int bestAction = 0;
-        float bestValue = qTable[stateIndex][0];
-        for (int i = 1; i < NUM_ACTIONS; i++) {
-            if (qTable[stateIndex][i] > bestValue) {
-                bestValue = qTable[stateIndex][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-}
-
-// Funkcja aktualizująca tablicę Q
-void updateQTable(int stateIndex, int action, float reward, int nextStateIndex) {
-    float bestNextValue = qTable[nextStateIndex][0];
-    for (int i = 1; i < NUM_ACTIONS; i++) {
-        if (qTable[nextStateIndex][i] > bestNextValue) {
-            bestNextValue = qTable[nextStateIndex][i];
-        }
-    }
-    qTable[stateIndex][action] = (1 - learningRate) * qTable[stateIndex][action] + learningRate * (reward + discountFactor * bestNextValue);
-}
-
-// Główna pętla uczenia
-void qLearningAgent3() {
-    // Inicjalizacja zmiennych stanu
-    float error = VOLTAGE_SETPOINT - currentVoltage;
-    float load = currentCurrent; // Przykładowe obciążenie
-    int stateIndex = getStateIndex(error, load, Kp, Ki, Kd);
-    int action = chooseAction(stateIndex);
-
-    // Wykonanie akcji (przykładowa implementacja)
-    switch (action) {
-    case 0: Kp += 0.1; break;
-    case 1: Kp -= 0.1; break;
-    case 2: Ki += 0.1; break;
-    case 3: Ki -= 0.1; break;
-    case 4: Kd += 0.1; break;
-    case 5: Kd -= 0.1; break;
-    }
-
-    // Symulacja systemu z nowymi parametrami PID
-    float newError = VOLTAGE_SETPOINT - simulateVoltageControl(Kp, Ki, Kd);
-    float reward = -abs(newError); // Nagroda jest ujemną wartością błędu, aby minimalizować błąd
-
-    int nextStateIndex = getStateIndex(newError, load, Kp, Ki, Kd);
-    updateQTable(stateIndex, action, reward, nextStateIndex);
-}
-
-unsigned long lastUpdateAgent1 = 0;
-unsigned long lastUpdateAgent2 = 0;
-unsigned long lastUpdateAgent3 = 0;
-const unsigned long updateInterval = 1;
-
-// Funkcja mapująca stan na indeks tablicy Q
-int getStateIndex(float error, float load, float Kp, float Ki, float Kd, float MIN_ERROR, float MAX_ERROR, float MIN_LOAD, float MAX_LOAD, float MIN_KP, float MAX_KP, float MIN_KI, float MAX_KI, float MIN_KD, float MAX_KD) {
-    int stateError = map(error, MIN_ERROR, MAX_ERROR, 0, NUM_STATE_BINS_ERROR - 1);
-    int stateLoad = map(load, MIN_LOAD, MAX_LOAD, 0, NUM_STATE_BINS_LOAD - 1);
-    int stateKp = map(Kp, MIN_KP, MAX_KP, 0, NUM_STATE_BINS_KP - 1);
-    int stateKi = map(Ki, MIN_KI, MAX_KI, 0, NUM_STATE_BINS_KI - 1);
-    int stateKd = map(Kd, MIN_KD, MAX_KD, 0, NUM_STATE_BINS_KD - 1);
-    return stateError * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD +
-        stateLoad * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD +
-        stateKp * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD +
-        stateKi * NUM_STATE_BINS_KD +
-        stateKd;
-}
-
-
-// Cel projektu:
-// System stabilizacji napięcia z wykorzystaniem trzech agentów uczących się:
-// * Agent1: Odpowiedzialny za stabilizację napięcia wyjściowego 230 volt.
-// * Agent2: Steruje 24 cewkami wzbudzenia w prądnicy, dążąc do utrzymania prądu wzbudzenia na poziomie 25A.
-// * Agent3: Minimalizuje hamowanie, nie wpływając na działanie Agent2 (sterowanie cewkami wzbudzenia).
-
-// Współpraca agentów:
-// * Agent1 i Agent2 przekazują informacje zwrotne do Agent3, informując go o wpływie swoich akcji na hamowanie.
-// * Agent3 wykorzystuje te informacje zwrotne do podejmowania decyzji, które minimalizują hamowanie, jednocześnie wspierając cele innych agentów.
-
-// Ostateczny cel:
-// Osiągnięcie minimalnego hamowania przy jednoczesnym utrzymaniu wysokiego prądu wzbudzenia w cewkach i stabilizacji napięcia na poziomie 230V.
-
-class Agent1 {
-public:
-    void stabilizeVoltage(float currentVoltage) {
-        // Implementacja stabilizacji napięcia
-        if (currentVoltage < VOLTAGE_SETPOINT) {
-            // Zwiększ napięcie
-            analogWrite(mosfetPin, constrain(analogRead(mosfetPin) + PWM_INCREMENT, 0, 255));
-        }
-        // Usunięto logikę zmniejszania napięcia
-    }
-
-    void odbierz_informacje_od_agenta3(float feedback) {
-        // Przetwarzanie informacji zwrotnej od Agent3
-    }
-
-    int discretizeState(float error, float generatorLoad, float Kp, float Ki, float Kd) {
-        return discretize(error, generatorLoad, Kp, Ki, Kd, NUM_STATE_BINS_ERROR, NUM_STATE_BINS_LOAD, NUM_STATE_BINS_KP, NUM_STATE_BINS_KI, NUM_STATE_BINS_KD);
-    }
-
-    int chooseAction(int state) {
-        if (rand() % 100 < epsilon * 100) {
-            return rand() % NUM_ACTIONS;
-        }
-        else {
-            auto bestAction = std::max_element(qTable[state], qTable[state] + NUM_ACTIONS);
-            return std::distance(qTable[state], bestAction);
-        }
-    }
-
-    void executeAction(int action) {
-        const int pins[] = { bjtPin1, bjtPin2, bjtPin3 };
-        const int increments[] = { PWM_INCREMENT, -PWM_INCREMENT, PWM_INCREMENT, -PWM_INCREMENT, PWM_INCREMENT, -PWM_INCREMENT };
-
-        analogWrite(pins[action % 3], constrain(analogRead(pins[action % 3]) + increments[action], 0, 255));
-    }
-
-    float calculateReward(float error, float efficiency, float voltageDrop) {
-        return calculateBasicReward(error, voltageDrop);
-    }
-
-    float calculateAdvancedReward(float next_observation) {
-        float napiecie = next_observation;
-        float spadek_napiecia = voltageDrop;
-        float excitation_current = currentIn[0]; // Przykładowa wartość, dostosuj według potrzeb
-        float excitation_current_threshold = 20.0; // Przykładowa wartość, dostosuj według potrzeb
-        float nagroda = 0;
-
-        nagroda -= abs(napiecie - VOLTAGE_SETPOINT);
-        nagroda -= spadek_napiecia;
-
-        // Zwiększona kara za spadek napięcia
-        nagroda -= COMPENSATION_FACTOR * spadek_napiecia;
-
-        // Kara jeśli akcja powoduje spadek prądu wzbudzenia poniżej progu
-        if (excitation_current < excitation_current_threshold) {
-            nagroda -= COMPENSATION_FACTOR;
-        }
-
-        // Niewielka nagroda jeśli akcja pomaga zwiększyć prąd wzbudzenia w pożądanym zakresie
-        if (excitation_current > excitation_current_threshold && excitation_current <= 23) {
-            nagroda += COMPENSATION_FACTOR;
-        }
-
-        // Dodatkowa nagroda za stabilizację napięcia na poziomie 230V
-        if (abs(napiecie - VOLTAGE_SETPOINT) < 1.0) {
-            nagroda += 10.0; // Przykładowa wartość nagrody, dostosuj według potrzeb
-        }
-
-        return nagroda;
-    }
-
-    void updateQ(int state, int action, float reward, int nextState) {
-        float bestNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS);
-        qTable[state][action] += learningRate * (reward + discountFactor * bestNextQ - qTable[state][action]);
-    }
-
-    void monitorPerformanceAndAdjust() {
-        static unsigned long lastAdjustmentTime = 0;
-        if (millis() - lastAdjustmentTime > 1000) {
-            float efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-            float efficiencyPercent = efficiency * 100.0;
-
-            // advancedLogData(efficiencyPercent); // Upewnij się, że ta funkcja jest zaimplementowana
-
-            if (efficiencyPercent < 90.0) {
-                excitationGain += 0.1;
-            }
-            else if (efficiencyPercent > 95.0) {
-                excitationGain -= 0.1;
-            }
-
-            excitationGain = constrain(excitationGain, 0.0, 1.0);
-
-            lastAdjustmentTime = millis();
-        }
-    }
-
-private:
-    float qTable[NUM_STATE_BINS_ERROR * NUM_STATE_BINS_LOAD * NUM_STATE_BINS_KP * NUM_STATE_BINS_KI * NUM_STATE_BINS_KD][NUM_ACTIONS];
-
-    int discretize(float error, float generatorLoad, float Kp, float Ki, float Kd, int numBinsError, int numBinsLoad, int numBinsKp, int numBinsKi, int numBinsKd) {
-        float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
-        float normalizedLoad = (generatorLoad - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
-        float normalizedKp = (Kp - MIN_KP) / (MAX_KP - MIN_KP);
-        float normalizedKi = (Ki - MIN_KI) / (MAX_KI - MIN_KI);
-        float normalizedKd = (Kd - MIN_KD) / (MAX_KD - MIN_KD);
-
-        int errorBin = constrain((int)(normalizedError * numBinsError), 0, numBinsError - 1);
-        int loadBin = constrain((int)(normalizedLoad * numBinsLoad), 0, numBinsLoad - 1);
-        int kpBin = constrain((int)(normalizedKp * numBinsKp), 0, numBinsKp - 1);
-        int kiBin = constrain((int)(normalizedKi * numBinsKi), 0, numBinsKi - 1);
-        int kdBin = constrain((int)(normalizedKd * numBinsKd), 0, numBinsKd - 1);
-
-        return errorBin + numBinsError * (loadBin + numBinsLoad * (kpBin + numBinsKp * (kiBin + numBinsKi * kdBin)));
-    }
-
-    float calculateBasicReward(float error, float voltageDrop) {
-        float reward = 1.0 / (abs(error) + 1); // Dodanie 1, aby uniknąć dzielenia przez 0
-        reward -= voltageDrop * 0.01;
-        return reward;
-    }
-};
-
-
-/* Agent 2 jest zaprojektowany wyłącznie do STEROWANIA (ZWIĘKSZANIA) prądu wzbudzenia w cewkach.
- * Nie należy dodawać funkcjonalności zmniejszania prądu wzbudzenia ani do Agenta 2, ani do Agenta 3.
- */
-
-class Agent2 {
-public:
-    float qTable[NUM_STATES_AGENT2][NUM_ACTIONS_AGENT2];
-    int state;
-    float feedbackFromAgent3 = 0.0;
-
-    Agent2() {
-        // Inicjalizacja tablicy Q
-        for (int i = 0; i < NUM_STATES_AGENT2; i++) {
-            for (int j = 0; j < NUM_ACTIONS_AGENT2; j++) {
-                qTable[i][j] = 0.0;
-            }
-        }
-        state = 0;
-    }
-
-    // Wybór akcji na podstawie epsilon-greedy
-    int chooseAction() {
-        if (random(0, 100) < testEpsilon * 100) {
-            return random(0, NUM_ACTIONS_AGENT2);
-        }
-        else {
-            return getBestAction();
-        }
-    }
-
-    // Wykonanie wybranej akcji
-    void executeAction(int action) {
-        int current = analogRead(muxInputPin);
-        if (current + PWM_INCREMENT <= MAX_CURRENT) {
-            switch (action) {
-            case 0:
-                analogWrite(excitationBJT1Pin, current + PWM_INCREMENT);
-                break;
-            case 1:
-                analogWrite(excitationBJT2Pin, current + PWM_INCREMENT);
-                break;
-            case 3:
-                for (int i = 1; i <= 11; i += 2) {
-                    analogWrite(excitationBJT1Pin, current + PWM_INCREMENT);
-                }
-                break;
-            case 2:
-            default:
-                // Utrzymaj prąd wzbudzenia (bez zmian)
-                if (current >= MAX_CURRENT - TOLERANCE) {
-                    analogWrite(excitationBJT1Pin, MAX_CURRENT);
-                    analogWrite(excitationBJT2Pin, MAX_CURRENT);
-                }
-                break;
-            }
-        }
-    }
-
-    // Aktualizacja tablicy Q
-    void updateQ(int nextState, float reward, int action) {
-        float maxNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS_AGENT2);
-        qTable[state][action] += testLearningRate * (reward + testDiscountFactor * maxNextQ - qTable[state][action]);
-    }
-
-    // Dyskretyzacja stanu
-    int discretizeState(float error, float load) {
-        int errorBin = (int)((error + VOLTAGE_SETPOINT) * NUM_STATE_BINS_ERROR / (VOLTAGE_SETPOINT * 2));
-        int loadBin = (int)(load * NUM_STATE_BINS_LOAD);
-        return errorBin * NUM_STATE_BINS_LOAD + loadBin;
-    }
-
-    // Obliczenie nagrody
-    float reward(float next_observation, float feedbackFromAgent3) {
-        const int TARGET_CURRENT = 25;
-        float prad_wzbudzenia = next_observation;
-        float nagroda = 0.0;
-
-        nagroda -= 2 * abs(TARGET_CURRENT - prad_wzbudzenia);
-
-        if (prad_wzbudzenia >= TARGET_CURRENT - TOLERANCE && prad_wzbudzenia <= TARGET_CURRENT + TOLERANCE) {
-            nagroda += 50.0;
-        }
-
-        nagroda += 0.5 * feedbackFromAgent3;
-
-        return nagroda;
-    }
-
-    // Odbieranie informacji od agenta 3
-    void odbierz_informacje_od_agenta3(float feedback) {
-        feedbackFromAgent3 = feedback;
-    }
-
-    void learn(float error, float load) {
-        int currentState = discretizeState(error, load);
-        int action = chooseAction(); // Upewnij się, że chooseAction nie wymaga argumentów
-        executeAction(action);
-    }
-
-
-        int discretizeState(float error, float load) {
-    // Normalizacja błędu do zakresu [0, 1]
-    float normalizedError = (error - MIN_ERROR) / (MAX_ERROR - MIN_ERROR);
-    int discreteError = static_cast<int>(normalizedError * (NUM_STATE_BINS_ERROR - 1));
-    
-    // Normalizacja obciążenia do zakresu [0, 1]
-    float normalizedLoad = (load - MIN_LOAD) / (MAX_LOAD - MIN_LOAD);
-    int discreteLoad = static_cast<int>(normalizedLoad * (NUM_STATE_BINS_LOAD - 1));
-    
-    // Upewnienie się, że dyskretyzowane wartości są w zakresie
-    if (discreteError < 0) {
-        discreteError = 0;
-    } else if (discreteError >= NUM_STATE_BINS_ERROR) {
-        discreteError = NUM_STATE_BINS_ERROR - 1;
-    }
-    
-    if (discreteLoad < 0) {
-        discreteLoad = 0;
-    } else if (discreteLoad >= NUM_STATE_BINS_LOAD) {
-        discreteLoad = NUM_STATE_BINS_LOAD - 1;
-    }
-    
-    // Kombinacja dyskretyzowanych wartości w jeden stan
-    return discreteError * NUM_STATE_BINS_LOAD + discreteLoad;
-}
-
-// Przykład użycia w kodzie
-void someFunction() {
-    float newError = VOLTAGE_SETPOINT - currentVoltage;
-    float newLoad = currentCurrent / MAX_CURRENT; // Normalizacja obciążenia
-    int nextState = discretizeState(newError, newLoad);
-
-    float nextObservation = analogRead(muxInputPin);
-    float rewardValue = reward(nextObservation, feedbackFromAgent3);
-
-    updateQ(nextState, rewardValue, action);
-    state = nextState;
-}
-
-
-private:
-    // Znalezienie najlepszej akcji na podstawie tablicy Q
-    int getBestAction() {
-        int bestAction = 0;
-        float bestValue = qTable[state][0];
-        for (int i = 1; i < NUM_ACTIONS_AGENT2; i++) {
-            if (qTable[state][i] > bestValue) {
-                bestValue = qTable[state][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-};
-
-
-
-
-
-/*
-* UWAGA:
-* Klasa Agent3 jest zaprojektowana tak, aby zawsze zmniejszać obciążenie prądnicy.
-* Proszę nie zmieniać tej funkcjonalności, aby uniknąć nieporozumień i błędów w działaniu systemu.
-*/
-
-class Agent3 {
-public:
-    int currentBrakePWM = INITIAL_BRAKE_PWM; // Początkowa wartość PWM hamowania
-    const int MIN_BRAKE_PWM = 0; // Minimalna wartość PWM hamowania (może być różna od 0)
-    const int MAX_BRAKE_PWM = 255; // Maksymalna wartość PWM hamowania
-
-    // Dyskretyzacja stanu (tylko na podstawie PWM hamowania)
-    int discretizeStateAgent3() {
-        return map(currentBrakePWM, MIN_BRAKE_PWM, MAX_BRAKE_PWM, 0, NUM_STATES_AGENT3 - 1);
-    }
-
-    // Funkcja wykonująca akcję agenta 3
-    void performAction() {
-        // Agent 3 zawsze zmniejsza hamowanie
-        currentBrakePWM = max(currentBrakePWM - PWM_INCREMENT, MIN_BRAKE_PWM);
-        analogWrite(mosfetPin, currentBrakePWM);
-    }
-
-    // Wykonanie akcji
-    void executeActionAgent3(int action) {
-        const int brakePWMPin = D3; // Przykładowy pin PWM dla hamowania - dostosuj do swojego systemu
-
-        switch (action) {
-        case 0:
-            // Zmniejsz hamowanie
-            currentBrakePWM = constrain(currentBrakePWM - PWM_INCREMENT, MIN_BRAKE_PWM, MAX_BRAKE_PWM);
-            break;
-        case 1:
-            // Zwiększ hamowanie
-            currentBrakePWM = constrain(currentBrakePWM + PWM_INCREMENT, MIN_BRAKE_PWM, MAX_BRAKE_PWM);
-            break;
-        }
-
-        analogWrite(brakePWMPin, currentBrakePWM);
-    }
-
-    // Obliczanie nagrody (uwzględniające informacje od innych agentów)
-    float calculateRewardAgent3(float feedbackFromAgent1, float feedbackFromAgent2) {
-        float reward = -currentBrakePWM; // Podstawowa nagroda za zmniejszanie hamowania
-
-        // Dodatkowa nagroda za współpracę z Agent1 i Agent2
-        reward += feedbackFromAgent1 + feedbackFromAgent2;
-
-        return reward;
-    }
-
-    void odbierz_informacje_od_agentow(int akcja1, int akcja2) {
-        // Tutaj możesz przetworzyć akcje Agent1 i Agent2, 
-        // aby dostosować zachowanie Agent3, jeśli to konieczne.
-    }
-
-    void updateQAgent3(int state, int action, float reward, int nextState) {
-        float bestNextQ = *std::max_element(qTable[nextState], qTable[nextState] + NUM_ACTIONS_AGENT3);
-        qTable[state][action] += learningRate * (reward + discountFactor * bestNextQ - qTable[state][action]);
-    }
-
-    void odbierz_informacje_hamowania(float hamowanie) {
-        // Ta funkcja może pozostać pusta, ponieważ nie ma czujników hamowania
-    }
-
-    void wyslij_informacje_do_agenta2(class Agent2& agent2, float feedback) {
-        // Ta funkcja może pozostać pusta, ponieważ Agent3 nie wysyła informacji do Agent2
-    }
-
-    void wyslij_informacje_do_agenta1(class Agent1& agent1, float feedback) {
-        // Ta funkcja może pozostać pusta, ponieważ Agent3 nie wysyła informacji do Agent1
-    }
-
-    void hillClimbing() {
-        // Implementacja algorytmu wspinaczki górskiej
-        float currentParams[3] = { Kp, Ki, Kd };
-        float bestParams[3];
-        getBestParams(bestParams);
-        float bestObjective = getBestObjective();
-
-        for (int i = 0; i < 100; i++) {
-            suggestNextParameters(currentParams);
-            float objective = objectiveFunction(currentParams);
-            if (objective > bestObjective) {
-                bestObjective = objective;
-                for (int j = 0; j < 3; j++) {
-                    bestParams[j] = currentParams[j];
-                }
-            }
-        }
-
-        for (int j = 0; j < 3; j++) {
-            currentParams[j] = bestParams[j];
-        }
-    }
-
-    void discretizeStateAgent3(float state[2], int discreteState[2]) {
-        // Normalizacja stanów
-        state[0] = constrain(state[0], 0.0, 1.0);
-        state[1] = constrain(state[1], 0.0, 1.0);
-
-        // Dyskretyzacja stanów
-        discreteState[0] = static_cast<int>(state[0] * (NUM_STATES_AGENT3 - 1));
-        discreteState[1] = static_cast<int>(state[1] * (NUM_STATES_AGENT3 - 1));
-    }
-
-    void someFunction() {
-        float state[2] = { 0.5, 0.7 };
-        int discreteState[2];
-
-        // Poprawne wywołanie funkcji
-        discretizeStateAgent3(state, discreteState);
-
-        // Definicja tablicy params
-        float params[3] = { 1.0, 0.1, 0.01 };
-        updateControlParameters(params); // Poprawne wywołanie
-
-        // Inny kod funkcji
-        Serial.println("Funkcja someFunction wykonana w kontekście semafora.");
-    }
-
-
-    void trainAgent1() {
-        // Implementacja funkcji trainAgent1
-        for (int episode = 0; episode < 1000; episode++) {
-            float state = readVoltage();
-            int discreteState;
-            discretizeStateAgent2(state, discreteState);
-
-            for (int step = 0; step < 100; step++) {
-                float action = chooseActionAgent3(&discreteState, testEpsilon);
-                executeActionAgent3(action);
-
-                float nextState = readVoltage();
-                int nextDiscreteState;
-                discretizeStateAgent2(nextState, nextDiscreteState);
-
-                float reward = calculateRewardAgent3(&state, action);
-                updateQAgent3(&state, action, reward, &nextState);
-
-                state = nextState;
-                discreteState = nextDiscreteState;
-            }
-        }
-    }
-
-
-    float chooseActionAgent3(int discreteState[2]) {
-        // Implementacja wyboru akcji dla agenta 3
-        int stateIndex = discreteState[0] * NUM_STATE_BINS_LOAD + discreteState[1];
-        float bestAction = 0;
-        float maxQ = qTable[stateIndex][0];
-        for (int i = 1; i < NUM_ACTIONS_AGENT3; i++) {
-            if (qTable[stateIndex][i] > maxQ) {
-                maxQ = qTable[stateIndex][i];
-                bestAction = i;
-            }
-        }
-        return bestAction;
-    }
-
-private:
-    float qTable[NUM_STATES_AGENT3][NUM_ACTIONS_AGENT3] = { 0 }; // Tablica Q-wartości
-};
-
-int main() {
-    Agent1 agent1;
-    Agent2 agent2;
-    Agent3 agent3;
-
-    // Przykładowa logika główna
-    float state[2] = { 230.0, 25.0 };
-    int discreteState[2];
-
-    agent3.discretizeStateAgent3(state, discreteState);
-    int action = agent3.chooseActionAgent3(discreteState);
-    agent3.executeActionAgent3(action);
-    float reward = agent3.calculateRewardAgent3(state[0], state[1]);
-    int nextState = agent3.discretizeStateAgent3(); // Zakładając, że stan jest aktualizowany gdzieś indziej
-    agent3.updateQAgent3(discreteState[0], action, reward, nextState);
-
+    GdiplusShutdown(gdiplusToken);
     return 0;
 }
-
-// Przykładowe dane wejściowe
-int states[] = { 0, 1, 2 };
-int actions[] = { 0, 1, 2 };
-float rewards[] = { 1.0, 0.5, -1.0 };
-int nextStates[] = { 1, 2, 0 };
-
-// Przypisz testowe wartości do używanych zmiennych raz na starcie
-void initializeTestValues() {
-    static bool initialized = false;
-    if (!initialized) {
-        epsilon = testEpsilon;
-        learningRate = testLearningRate;
-        discountFactor = testDiscountFactor;
-        initialized = true;
-    }
-}
-void TaskDisplay(void* pvParameters) {
-    (void)pvParameters;
-    for (;;) {
-        // Kod zadania Display
-        Serial.println("TaskDisplay is running");
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Opóźnienie 1 sekundy
-    }
-}
-
-void TaskSerial(void* pvParameters) {
-    (void)pvParameters;
-    for (;;) {
-        // Kod zadania Serial
-        Serial.println("TaskSerial is running");
-        vTaskDelay(500 / portTICK_PERIOD_MS); // Opóźnienie 0.5 sekundy
-    }
-}
-
-void TaskEnergyManagement(void* pvParameters) {
-    (void)pvParameters;
-    for (;;) {
-        // Kod zadania EnergyManagement
-        energyManagement();
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Opóźnienie 1 sekundy
-    }
-}
-
-void setup() {
-    // Inicjalizacja komunikacji szeregowej
-    Serial.begin(115200); // Ustawienie prędkości transmisji na 115200 bps
-    while (!Serial) {
-        ; // Czekaj na otwarcie portu szeregowego
-    }
-
-    // Inicjalizacja wyświetlacza
-    if (!display.begin(SH1106_SWITCHCAPVCC, 0x3C)) {
-        Serial.println(F("SH1106 allocation failed"));
-        for (;;); // Zatrzymanie programu w przypadku niepowodzenia
-    }
-    display.display();
-    delay(2000);
-    display.clearDisplay();
-
-    // Inicjalizacja semaforów
-    resourceSemaphore = xSemaphoreCreateMutex();
-    eepromSemaphore = xSemaphoreCreateMutex();
-
-    if (resourceSemaphore == NULL || eepromSemaphore == NULL) {
-        Serial.println("Błąd podczas tworzenia semaforów.");
-    }
-    else {
-        Serial.println("Semafory zostały pomyślnie utworzone.");
-    }
-
-    // Inicjalizacja EEPROM
-    EEPROM.begin(512);
-
-    // Ustawienie docelowego napięcia dla wszystkich agentów
-    setTargetVoltageForAllAgents(VOLTAGE_SETPOINT);
-
-    // Wywołanie funkcji centralController
-    centralController();
-
-    // Inicjalizacja zmiennych globalnych
-    initializeGlobalVariables();
-
-    // Przykładowe dane do zapisu w EEPROM
-    int address = 0;
-    byte value = 42;
-    writeEEPROM(address, value);
-
-    // Inicjalizacja mapy funkcji naprawczych
-    initializeFixFunctions();
-
-    // Trenuj model uczenia maszynowego
-    trainModel();
-
-    // Inicjalizacja komunikacji I2C
-    Wire.begin();
-
-    // Inicjalizacja tablicy Q
-    initializeQTable();
-
-    // Inicjalizacja pinów
-    initializePins();
-
-    // Tworzenie zadań dla agentów
-    createAgentTasks();
-
-    // Inicjalizacja komponentów
-    initializeComponents();
-
-    // Inicjalizacja zmiennej stateAgent3
-    stateAgent3.state[0] = 0.0;
-    stateAgent3.state[1] = 0.0;
-    stateAgent3.discreteState[0] = 0;
-    stateAgent3.discreteState[1] = 0;
-
-    // Przykładowe wartości dla stateAgent3.state
-    stateAgent3.state[0] = 0.5;
-    stateAgent3.state[1] = 1.2;
-
-    // Wywołanie funkcji dyskretyzującej
-    discretizeStateAgent3(stateAgent3.state, stateAgent3.discreteState);
-
-    // Wyświetlenie zdyskretyzowanych wartości
-    Serial.print("Discrete State 0: ");
-    Serial.println(stateAgent3.discreteState[0]);
-    Serial.print("Discrete State 1: ");
-    Serial.println(stateAgent3.discreteState[1]);
-
-    // Tworzenie zadań FreeRTOS
-    xTaskCreate(TaskDisplay, "Display", 128, NULL, 1, NULL);
-    xTaskCreate(TaskSerial, "Serial", 128, NULL, 1, NULL);
-    xTaskCreate(TaskEnergyManagement, "EnergyManagement", 128, NULL, 1, NULL);
-
-    // Uruchomienie planisty
-    vTaskStartScheduler();
-
-    Serial.println(F("Setup complete"));
-}
-
-void TaskSerial(void* pvParameters) {
-    (void)pvParameters;
-    for (;;) {
-        // Obsługa komunikacji szeregowej
-        handleSerialCommunication();
-        vTaskDelay(500 / portTICK_PERIOD_MS); // Opóźnienie 0.5 sekundy
-    }
-}
-
-void TaskEnergyManagement(void* pvParameters) {
-    (void)pvParameters;
-    for (;;) {
-        // Kod zadania EnergyManagement
-        energyManagement();
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Opóźnienie 1 sekundy
-    }
-}
-
-void loop() {
-    mainLoop();
-}
-
-void mainLoop() {
-    // Odczyt danych z sensorów
-    float voltage = readVoltage();
-    float excitationCurrent = readExcitationCurrent();
-    float brakingEffect = readBrakingEffect();
-
-    // Filtrowanie sygnałów
-    voltage = lowPassFilter(voltage, previousFilteredValue, 0.1);
-    previousFilteredValue = voltage;
-
-    // Definicja tablicy params
-    float params[3] = { 1.0, 0.1, 0.01 };
-    updateControlParameters(params); // Poprawne wywołanie
-
-    // Obliczenie błędu regulacji
-    float error = calculateError(VOLTAGE_SETPOINT, voltage);
-
-    // Aktualizacja parametrów regulatora
-    float params[3] = { Kp, Ki, Kd };
-    updateControlParameters(params);
-
-    // Obsługa komunikacji szeregowej
-    handleSerialCommunication();
-
-    // Aktualizacja wyświetlacza
-    updateDisplay();
-
-    // Monitorowanie błędów
-    monitorErrors();
-
-    // Detekcja anomalii
-    detectAnomalies();
-
-    // Dodaj inne funkcje, które chcesz wywoływać cyklicznie
-
-    // Przykładowe opóźnienie, aby nie wykonywać pętli zbyt często
-    delay(1000); // Opóźnienie 1 sekundy
-}
-
-void advancedLogData() {
-    // Przykładowe logowanie danych
-    Serial.print("Napięcie wejściowe: ");
-    Serial.println(voltageIn[0]);
-    Serial.print("Prąd wejściowy: ");
-    Serial.println(currentIn[0]);
-    Serial.print("Napięcie zewnętrzne: ");
-    Serial.println(externalVoltage);
-    Serial.print("Prąd zewnętrzny: ");
-    Serial.println(externalCurrent);
-    Serial.print("Spadek napięcia: ");
-    Serial.println(voltageDrop);
-    Serial.print("Wydajność: ");
-    Serial.println(efficiency);
-    Serial.print("Wydajność procentowa: ");
-    Serial.println(efficiencyPercent);
-    Serial.print("Ostatnia akcja: ");
-    Serial.println(lastAction);
-}
-
-void checkComputerConnection() {
-    static bool isConnected = false;
-    if (Serial) {
-        if (!isConnected) {
-            Serial.println("Połączenie z komputerem nawiązane.");
-            isConnected = true;
-        }
-    }
-    else {
-        if (isConnected) {
-            Serial.println("Połączenie z komputerem utracone.");
-            isConnected = false;
-        }
-    }
-}
-
-void discretizeStateAgent3(float state[2], int discreteState[2]) {
-    // Normalizacja stanów
-    state[0] = constrain(state[0], 0.0, 1.0);
-    state[1] = constrain(state[1], 0.0, 1.0);
-
-    // Dyskretyzacja stanów
-    discreteState[0] = static_cast<int>(state[0] * (NUM_STATES_AGENT3 - 1));
-    discreteState[1] = static_cast<int>(state[1] * (NUM_STATES_AGENT3 - 1));
-}
-
-void someFunction() {
-    float state[2] = { 0.5, 0.7 };
-    int discreteState[2];
-
-    // Poprawne wywołanie funkcji
-    discretizeStateAgent3(state, discreteState);
-
-    // Próba zajęcia semafora
-    if (xSemaphoreTake(eepromSemaphore, (TickType_t)10) == pdTRUE) {
-        // ... operacje na EEPROM ...
-
-        // Przykładowe operacje na EEPROM
-        int address = 0; // Adres w EEPROM
-        byte value = 42; // Wartość do zapisu
-
-        EEPROM.write(address, value); // Zapis wartości do EEPROM
-        EEPROM.commit(); // Zatwierdzenie zapisu
-
-        byte readValue = EEPROM.read(address); // Odczyt wartości z EEPROM
-        Serial.print("Odczytana wartość: ");
-        Serial.println(readValue);
-
-        // Zwolnienie semafora
-        xSemaphoreGive(eepromSemaphore);
-    }
-    else {
-        // Nie udało się zająć semafora - obsłuż to zdarzenie
-        Serial.println("Nie udało się zająć semafora EEPROM!");
-    }
-}
-
-void updateOptimizer() {
-    unsigned long currentTime = millis();
-    if (currentTime - lastOptimizationTime >= OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = currentTime;
-
-        // Pobierz nowe parametry z optymalizatora
-        optimizer.getNextParams(params);
-
-        // Oblicz wydajność dla nowych parametrów
-        float averageEfficiency = objectiveFunction(params);
-
-        // Zaktualizuj optymalizator z nowymi parametrami i uzyskaną wydajnością
-        optimizer.update(params, averageEfficiency);
-
-        // Sprawdź, czy uzyskana wydajność jest najlepsza
-        if (averageEfficiency > bestEfficiency) {
-            bestEfficiency = averageEfficiency;
-            // Zapisz najlepsze parametry
-            // Możesz dodać kod do zapisu najlepszych parametrów
-        }
-    }
-}
-
-// Inicjalizacja portu szeregowego
-void initializeSerial() {
-    Serial.begin(115200);
-    while (!Serial) {
-        ; // Czekaj na połączenie z komputerem
-    }
-    detectComputerConnection(); // Wykryj połączenie z komputerem i rozpocznij przenoszenie mocy obliczeniowej
-}
-
-// Inicjalizacja EEPROM
-void initializeEEPROM() {
-    EEPROM.begin(512);
-}
-
-// Inicjalizacja pinów i innych komponentów
-void initializeComponents() {
-    initializePins();
-    initializeServer();
-    initializeDisplay();
-    initializeOptimizer();
-}
-
-// Wyświetlenie wiadomości powitalnej
-void displayWelcome() {
-    displayWelcomeMessage();
-}
-
-
-// Inicjalizacja zmiennych globalnych
-void initializeGlobals() {
-    initializeGlobalVariables();
-}
-
-// Inicjalizacja WiFi
-void initializeWiFiConnection() {
-    initializeWiFi();
-}
-
-// Wywołanie funkcji autoCalibrate
-void autoCalibrateSystem() {
-    autoCalibrate();
-}
-
-// Funkcja ustawiająca docelowe napięcie dla wszystkich agentów na średnią wartość
-void setTargetVoltageForAllAgents(float averageTargetVoltage) {
-    int numAgents = sizeof(agents) / sizeof(agents[0]);
-    for (int i = 0; i < numAgents; i++) {
-        agents[i].targetVoltage = averageTargetVoltage;
-    }
-}
-
-// Globalne zmienne dla minimalnej i maksymalnej mocy wejściowej
-float minInputPower = 1e-7; // Początkowa wartość, dostosowana w funkcji
-float minObservedPower = 1e-6;
-float maxObservedPower = 1e-3;
-
-// Aktualizuj minimalną i maksymalną obserwowaną moc
-void updateObservedPower(float inputPower) {
-    if (inputPower > 0 && inputPower < minObservedPower) {
-        minObservedPower = inputPower;
-    }
-
-    if (inputPower > maxObservedPower) {
-        maxObservedPower = inputPower;
-    }
-
-    // Dostosuj próg na podstawie obserwowanych wartości
-    minInputPower = minObservedPower * 0.1; // Możesz dostosować współczynnik 0.1
-}
-
-
-
-void loop() {
-
-    // Inicjalizacja mapy funkcji naprawczych
-    void initializeFixFunctions() {
-        fixFunctions["default"] = defaultFixFunction;
-        fixFunctions["Voltage out of range"] = resetVoltageController;
-        fixFunctions["Current exceeds maximum limit"] = reduceExcitationCurrent;
-        fixFunctions["Braking effect out of range"] = calibrateBrakingEffect;
-        // Dodaj inne funkcje naprawcze w razie potrzeby
-    }
-
-    // Inicjalizacja pinów
-    void initializePins() {
-        int pins[] = { muxSelectPinA, muxSelectPinB, muxSelectPinC, muxSelectPinD, mosfetPin, bjtPin1, bjtPin2, bjtPin3, excitationBJT1Pin, excitationBJT2Pin, newPin1, newPin2, newPin3, bjtPin4 };
-        for (int pin : pins) {
-            pinMode(pin, OUTPUT);
-        }
-        pinMode(muxInputPin, INPUT);
-    }
-
-    // Tworzenie zadań dla agentów
-    void createAgentTasks() {
-        xTaskCreate(agent1Function, "Agent1", 2048, NULL, 1, NULL);
-        xTaskCreate(agent2Function, "Agent2", 2048, NULL, 1, NULL);
-        xTaskCreate(agent3Function, "Agent3", 2048, NULL, 1, NULL);
-    }
-
-    // Inicjalizacja komponentów
-    void initializeComponents() {
-        initializeServer();
-        initializeOptimizer();
-        displayWelcomeMessage();
-        initializeGlobalVariables();
-        initializeWiFi();
-    }
-
-    // Inicjalizacja serwera
-    void initializeServer() {
-        server.begin();
-    }
-
-    // Inicjalizacja PID
-    void initializePID() {
-        PID pid(1.0, 0.1, 0.01);
-        float setpoint = 230.0; // Docelowe napięcie
-        float measuredValue = readVoltage(); // Funkcja do odczytu napięcia
-
-        autoTunePID(pid, setpoint, measuredValue);
-
-        // Teraz możesz używać pid do kontroli
-        float output = pid.compute(setpoint, measuredValue);
-        analogWrite(mosfetPin, constrain(output, 0, 255));
-    }
-
-
-
-    // Inicjalizacja optymalizatora
-    void initializeOptimizer() {
-        optimizer.initialize(3, bounds, 50, 10);
-    }
-
-    // Wyświetlenie wiadomości powitalnej
-    void displayWelcomeMessage() {
-        char buffer[64];
-        strcpy_P(buffer, welcomeMessage);
-        display.println(buffer);
-        display.display();
-    }
-
-    // Inicjalizacja zmiennych globalnych
-    void initializeGlobalVariables() {
-        externalVoltage = 0.0;
-        externalCurrent = 0.0;
-        efficiency = 0.0;
-        efficiencyPercent = 0.0;
-        voltageDrop = 0.0;
-        currentVoltage = 0.0;
-        currentCurrent = 0.0;
-    }
-
-    // Inicjalizacja WiFi
-    void initializeWiFi() {
-        WiFi.begin("admin", "admin");
-        unsigned long startAttemptTime = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
-            delay(1000);
-            Serial.println("Łączenie z WiFi...");
-        }
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("Połączono z WiFi");
-            Serial.print("Adres IP: ");
-            Serial.println(WiFi.localIP());
-        }
-        else {
-            Serial.println("Nie udało się połączyć z WiFi");
-        }
-    }
-
-    // Aktualizacja priorytetu agenta
-    void updateAgentPriority(int agentId) {
-        for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-            if (agents[i].id == agentId) {
-                agents[i].waitCount++; // Zwiększ licznik prób uzyskania dostępu
-                agents[i].waitTime = millis(); // Ustaw czas oczekiwania
-                // Ustal priorytet na podstawie liczby prób i czasu oczekiwania
-                agents[i].priority = agents[i].waitCount + (millis() - agents[i].waitTime) / 1000;
-                agents[i].priority = constrain(agents[i].priority, 0, 10); // Ogranicz maksymalny priorytet
-                break;
-            }
-        }
-    }
-
-    // Zwraca agenta o najwyższym priorytecie
-    int getHighestPriorityAgent() {
-        int highestPriority = -1;
-        int index = -1;
-        for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-            if (agents[i].priority > highestPriority) {
-                highestPriority = agents[i].priority;
-                index = i;
-            }
-        }
-        return index; // Zwraca indeks agenta o najwyższym priorytecie
-    }
-
-    // Ustawia PWM
-    bool setPWM(int pin, float action, int agentId) {
-        int agentIndex = getHighestPriorityAgent();
-
-        // Sprawdź, czy agent o najwyższym priorytecie to ten, który prosi o dostęp
-        if (agentIndex != -1 && agents[agentIndex].id == agentId) {
-            if (xSemaphoreTake(resourceSemaphore, pdMS_TO_TICKS(100)) == pdTRUE) {
-                unsigned long currentTime = millis();
-                if (currentTime - agents[agentIndex].lastAccessTime < timeSlice) {
-                    int pwmValue = (int)(action * 255.0);
-                    pwmValue = constrain(pwmValue, 0, 255);
-                    analogWrite(pin, pwmValue);
-                    agents[agentIndex].lastAccessTime = currentTime; // Ustaw czas ostatniego dostępu
-                    xSemaphoreGive(resourceSemaphore); // Zwolnienie semafora
-
-                    // Resetowanie priorytetu agenta po udanym dostępie
-                    agents[agentIndex].waitCount = 0; // Resetuj licznik prób
-                    agents[agentIndex].priority = 0;   // Resetuj priorytet
-                    return true; // Sukces
-                }
-                else {
-                    // Jeśli czas przydzielony minął, resetuj dostęp
-                    xSemaphoreGive(resourceSemaphore);
-                    return false; // Niepowodzenie, czas przydzielony minął
-                }
-            }
-            else {
-                Serial.println("Timeout while waiting for semaphore.");
-                updateAgentPriority(agentId); // Aktualizacja priorytetu, jeśli czas oczekiwania
-                return false; // Niepowodzenie
-            }
-        }
-        return false; // Agent nie ma dostępu
-    }
-
-    // Wykonuje akcję agenta
-    void executeActionAgent(int agentId, float action) {
-        int pin;
-        switch (agentId) {
-        case 1:
-            pin = 9; // Pin dla Agenta 1
-            break;
-        case 2:
-            pin = 10; // Pin dla Agenta 2
-            break;
-        case 3:
-            pin = 11; // Pin dla Agenta 3
-            break;
-        default:
-            Serial.println("Invalid agent ID.");
-            return;
-        }
-        if (!setPWM(pin, action, agentId)) {
-            Serial.printf("Agent %d failed to set PWM.\n", agentId);
-        }
-    }
-
-    // Inicjalizacja komponentów
-    void initializeComponents() {
-        // Dodaj tutaj kod inicjalizujący inne komponenty
-    }
-
-    // Wyświetlenie wiadomości powitalnej
-    void displayWelcome() {
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(WHITE);
-        display.setCursor(0, 0);
-        display.println("Witamy!");
-        display.display();
-    }
-
-    // Inicjalizacja zmiennych globalnych
-    void initializeGlobals() {
-        // Dodaj tutaj kod inicjalizujący zmienne globalne
-    }
-
-    // Automatyczna kalibracja systemu
-    void autoCalibrateSystem() {
-        // Dodaj tutaj kod kalibracji systemu
-    }
-
-    // Inicjalizacja parametrów PID
-    void initializePIDParams() {
-        handlePIDParams(Kp, Ki, Kd, false);
-        previousError = 0;
-        integral = 0;
-    }
-
-    // Inicjalizacja tras serwera
-    void initializeServerRoutes() {
-        server.on("/", []() {
-            server.send(200, "text/plain", "Witaj w systemie stabilizacji napięcia!");
-            });
-        server.begin();
-    }
-
-    void initializeRandomSeed() {
-        randomSeed(analogRead(0));
-    }
-
-    void displayWelcomeMessageSerial() {
-        Serial.println(FPSTR(welcomeMessage));
-    }
-
-    void initializeAgent1State() {
-        stateAgent1[0] = 0.0;
-        stateAgent1[1] = 0.0;
-        actionAgent1 = 0.0;
-    }
-
-    void initializeBayesianOptimization() {
-        bestEfficiency = 0.0;
-        lastOptimizationTime = millis();
-    }
-
-    float objectiveFunction(const float* params) {
-        // Przypisanie parametrów PID
-        float Kp = params[0];
-        float Ki = params[1];
-        float Kd = params[2];
-
-        // Symulacja lub rzeczywiste testowanie wydajności systemu
-        // Tutaj zakładamy, że mamy funkcję `simulateSystem` która zwraca wydajność
-        float efficiency = simulateSystem(Kp, Ki, Kd);
-
-        return efficiency;
-    }
-
-    float evaluate(float threshold) {
-        // Implementacja funkcji oceniającej
-        // Zwraca wartość oceny dla danego progu
-        float voltage = readVoltage();
-        return (voltage > threshold) ? 1.0 : 0.0; // Próg przekroczony lub nie
-    }
-
-    void selectMuxChannel(int channel) {
-        digitalWrite(muxSelectPinA, channel & 1);
-        digitalWrite(muxSelectPinB, (channel >> 1) & 1);
-        digitalWrite(muxSelectPinC, (channel >> 2) & 1);
-        digitalWrite(muxSelectPinD, (channel >> 3) & 1);
-    }
-
-    // Funkcja odczytu sensorów
-    void readSensors() {
-        // Odczyt z czujników napięcia (kanały 0 i 1)
-        for (int i = 0; i < 2; i++) {
-            selectMuxChannel(i);
-            voltageIn[i] = analogRead(muxInputPin) * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-        }
-
-        // Odczyt z czujników prądu (kanały 2 i 3)
-        for (int i = 0; i < 2; i++) {
-            selectMuxChannel(i + 2);
-            currentIn[i] = calculateCurrent(analogRead(muxInputPin));
-        }
-    }
-
-    // Funkcja obliczania prądu
-    float calculateCurrent(int raw_current_adc) {
-        float sensorVoltage = raw_current_adc * (VOLTAGE_REFERENCE / ADC_MAX_VALUE);
-        float voltageOffset = VOLTAGE_REFERENCE / 2;
-        sensorVoltage -= voltageOffset;
-        const float sensitivity = 0.185; // Dostosuj, jeśli czułość Twoich czujników jest inna
-        return sensorVoltage / sensitivity;
-    }
-
-    // Funkcja sprawdzania alarmów
-    void checkAlarm() {
-        if (voltageIn[0] > VOLTAGE_SETPOINT + VOLTAGE_REGULATION_HYSTERESIS) {
-            Serial.println("Alarm: Napięcie przekroczyło górny próg!");
-        }
-        else if (voltageIn[0] < VOLTAGE_SETPOINT - VOLTAGE_REGULATION_HYSTERESIS) {
-            Serial.println("Alarm: Napięcie spadło poniżej dolnego progu!");
-        }
-    }
-
-    // Funkcja automatycznej kalibracji
-    void autoCalibrate() {
-        Serial.println("Rozpoczynanie automatycznej kalibracji...");
-
-        // Kalibracja napięcia
-        float measuredVoltage = readVoltage();
-        Serial.print("Zmierzono napięcie: ");
-        Serial.println(measuredVoltage);
-
-        // Kalibracja prądu
-        float measuredCurrent = readCurrent();
-        Serial.print("Zmierzono prąd: ");
-        Serial.println(measuredCurrent);
-
-        // Ustawienie parametrów kalibracji
-        float voltageCalibrationFactor = VOLTAGE_REFERENCE / measuredVoltage;
-        float currentCalibrationFactor = MAX_CURRENT / measuredCurrent;
-
-        Serial.print("Współczynnik kalibracji napięcia: ");
-        Serial.println(voltageCalibrationFactor);
-        Serial.print("Współczynnik kalibracji prądu: ");
-        Serial.println(currentCalibrationFactor);
-
-        // Zapisanie współczynników kalibracji do pamięci EEPROM
-        EEPROM.begin(512);
-        EEPROM.put(0, voltageCalibrationFactor);
-        EEPROM.put(sizeof(voltageCalibrationFactor), currentCalibrationFactor);
-        EEPROM.commit();
-
-        Serial.println("Kalibracja zakończona.");
-    }
-
-    // Funkcja zarządzania energią
-    void energyManagement() {
-        int excitationValue = (currentIn[0] > LOAD_THRESHOLD) ? 255 : 0;
-        analogWrite(excitationBJT1Pin, excitationValue);
-        analogWrite(excitationBJT2Pin, excitationValue);
-    }
-
-    // Funkcja aktualizacji wyświetlacza
-    void updateDisplay(float efficiencyPercent) {
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(WHITE, BLACK); // Ustawienie koloru tekstu na biały na czarnym tle
-        display.setCursor(0, 0);
-        display.println("System Status:");
-        display.print("Napięcie: ");
-        display.print(readVoltage());
-        display.println(" V");
-        display.print("Prąd: ");
-        display.print(readExcitationCurrent());
-        display.println(" A");
-        display.print("Wydajność: ");
-        display.print(efficiencyPercent);
-        display.println(" %");
-        display.print("Braking Effect: ");
-        display.print(readBrakingEffect());
-        display.println(" %");
-        display.display();
-    }
-
-    // Funkcja obsługująca komendy z portu szeregowego
-    void handleSerialCommands() {
-        if (Serial.available()) {
-            String command = Serial.readStringUntil('\n');
-            command.trim(); // Usuwa białe znaki na początku i końcu
-
-            if (command == "START") {
-                Serial.println("Komenda START otrzymana");
-                // Dodaj tutaj kod do uruchomienia odpowiedniej funkcji
-            }
-            else if (command == "STOP") {
-                Serial.println("Komenda STOP otrzymana");
-                // Dodaj tutaj kod do zatrzymania odpowiedniej funkcji
-            }
-            else if (command == "OPTIMIZE") {
-                Serial.println("Komenda OPTIMIZE otrzymana");
-                optimizePID();
-            }
-            else {
-                Serial.println("Nieznana komenda: " + command);
-            }
-        }
-    }
-
-    // Funkcja dostosowująca częstotliwość sterowania
-    void adjustControlFrequency() {
-        static unsigned long lastAdjustmentTime = 0;
-        if (millis() - lastAdjustmentTime > 1000) {
-            if (stopCompute) { // Sprawdź flagę stopCompute
-                return; // Jeśli obliczenia są zatrzymane, wyjdź z funkcji
-            }
-
-            if (currentIn[0] > LOAD_THRESHOLD) {
-                controlFrequency = HIGH_FREQUENCY;
-            }
-            else {
-                controlFrequency = LOW_FREQUENCY;
-            }
-            lastAdjustmentTime = millis();
-        }
-    }
-
-    // Funkcja obliczająca wydajność
-    float calculateEfficiency(float voltageIn, float currentIn, float externalVoltage, float externalCurrent) {
-        float inputPower = voltageIn * currentIn;
-        float outputPower = externalVoltage * externalCurrent;
-
-        if (inputPower == 0) {
-            return 0;
-        }
-
-        return outputPower / inputPower;
-    }
-
-    // Funkcja logująca błędy do EEPROM
-    void logError(String error) {
-        int addr = 0;
-        while (addr < 512) {
-            if (EEPROM.read(addr) == 0) {
-                if (addr + error.length() + 1 < 512) { // Sprawdzenie, czy jest wystarczająco dużo miejsca
-                    for (int i = 0; i < error.length(); i++) {
-                        EEPROM.write(addr + i, error[i]);
-                    }
-                    EEPROM.write(addr + error.length(), 0); // Zakończenie stringa
-                    EEPROM.commit();
-                }
-                break;
-            }
-            addr += error.length() + 1;
-        }
-    }
-
-    // Funkcja odczytująca logi błędów z EEPROM
-    void readErrorLog() {
-        int addr = 0;
-        while (addr < 512) {
-            char c = EEPROM.read(addr);
-            if (c == 0) break;
-            String error = "";
-            while (c != 0) {
-                error += c;
-                addr++;
-                c = EEPROM.read(addr);
-            }
-            Serial.println("Logged error: " + error);
-            addr++;
-        }
-    }
-
-    // Funkcja wykrywająca anomalie
-    void detectAnomalies() {
-        float voltage = readVoltage();
-        float current = readExcitationCurrent();
-        float brakingEffect = readBrakingEffect();
-
-        // Wykorzystanie modelu uczenia maszynowego do przewidywania błędów
-        String predictedError = predictWithModel(voltage, current, brakingEffect);
-        if (predictedError != "") {
-            handleAnomaly(predictedError);
-        }
-    }
-
-    // Funkcja obsługująca wykryte anomalie
-    void handleAnomaly(String anomaly) {
-        Serial.println("Anomaly detected: " + anomaly);
-        logError(anomaly);
-        generateAndImplementFix(anomaly); // Wywołanie funkcji naprawczej dla anomalii
-    }
-
-    // Prosta funkcja przewidująca błędy na podstawie reguł
-    String predictError(float voltage, float current, float brakingEffect) {
-        if (voltage < 220.0 || voltage > 240.0) {
-            return "Voltage out of range";
-        }
-        if (current > MAX_CURRENT) {
-            return "Current exceeds maximum limit";
-        }
-        if (brakingEffect < 0.0 || brakingEffect > 100.0) {
-            return "Braking effect out of range";
-        }
-        return "";
-    }
-
-    // Funkcja dodająca funkcję naprawczą dla danego błędu
-    void addFixFunction(String error, void(*fixFunction)()) {
-        fixFunctions[error] = fixFunction;
-    }
-
-    // Domyślna funkcja naprawcza
-    void defaultFixFunction() {
-        Serial.println("No specific fix available. Executing default fix...");
-        // Kod domyślnej naprawy
-    }
-
-    // Funkcja trenująca model
-    void trainModel() {
-        // Przykładowe trenowanie modelu (w rzeczywistości powinno być bardziej zaawansowane)
-        modelWeights[0] = 1.2; // Waga dla napięcia
-        modelWeights[1] = 1.5; // Waga dla prądu
-        modelWeights[2] = 0.8; // Waga dla efektu hamowania
-        modelWeights[3] = 2.0; // Dodatkowa waga dla bardziej złożonego modelu
-    }
-
-    // Funkcja przewidująca błędy za pomocą modelu
-    String predictWithModel(float voltage, float current, float brakingEffect) {
-        // Prosty model liniowy do przewidywania błędów
-        float score = modelWeights[0] * voltage + modelWeights[1] * current + modelWeights[2] * brakingEffect + modelWeights[3] * (voltage * current);
-        if (score > 1500) { // Zwiększony próg dla wykrywania większych anomalii
-            return "Anomaly detected by model";
-        }
-        return "";
-    }
-
-    // Funkcja aktualizująca wyświetlacz
-    void updateDisplay() {
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(WHITE);
-        display.setCursor(0, 0);
-        display.println("System Status:");
-        display.println("Voltage: " + String(readVoltage()) + " V");
-        display.println("Current: " + String(readExcitationCurrent()) + " A");
-        display.println("Braking Effect: " + String(readBrakingEffect()));
-        display.display();
-    }
-
-    void loop() {
-        unsigned long currentMillis = millis();
-
-        // Aktualizacja wyświetlacza
-        if (currentMillis - previousMillisDisplay >= intervalDisplay) {
-            previousMillisDisplay = currentMillis;
-            updateDisplay();
-        }
-
-        // Obsługa poleceń szeregowych
-        handleSerialCommands();
-
-        // Wykrywanie połączenia z komputerem
-        detectComputerConnection();
-
-        // Trenowanie agentów
-        trainAgents();
-
-        // Komunikacja między agentami
-        communicateBetweenAgents();
-
-        // Kontrola tranzystorów
-        controlTransistors(currentVoltage, currentCurrent);
-
-        // Obsługa komunikacji szeregowej
-        if (currentMillis - previousMillisSerial >= intervalSerial) {
-            previousMillisSerial = currentMillis;
-            handleSerialCommunication();
-        }
-
-        // Obsługa serwera
-        server.handleClient();
-
-        // Przykładowe wywołanie funkcji optymalizacji
-        optimize();
-
-        // Przykładowe wywołanie funkcji auto-strojenia PID
-        autoTunePID();
-
-        // Przykładowe wywołanie funkcji hill climbing
-        hillClimbing();
-
-        // Przykładowe wywołanie funkcji agenta 3
-        handleAgent3();
-
-        // Krótkie opóźnienie, aby symulować czas rzeczywisty
-        delay(100);
-
-        // Aktualizacja bieżących wartości napięcia i prądu
-        updateCurrentValues();
-
-        // Regularne wywoływanie optymalizacji PID
-        handlePIDOptimization();
-
-        // Odczyt mocy wejściowej i dostosowanie minimalnej mocy wejściowej
-        float inputPower = readInputPower(); // Odczytaj moc wejściową
-        updateObservedPower(inputPower); // Aktualizuj obserwowaną moc
-
-        // Dodanie nowej pętli z warunkiem wyjścia
-        handleLoopWithExitCondition();
-
-        // Symulacja systemu
-        simulateSystemPerformance();
-
-        // Przykładowe aktualizacje potrzeb agentów
-        updateAgentNeeds();
-
-        // Wysyłanie danych do komputera
-        sendDataToComputer();
-
-        // Aktualizacja priorytetów agentów
-        updateAgentPriorities();
-
-        // Przydzielanie zasobów agentom
-        allocateResources();
-
-        // Przykładowa logika sterowania
-        controlLogic();
-
-        // Monitorowanie błędów i wykrywanie anomalii
-        monitorErrors();
-        detectAnomalies();
-        delay(1000); // Sprawdzaj błędy co 1 sekundę
-
-        // Przypisz testowe wartości do używanych zmiennych raz na starcie
-        static bool initialized = false;
-        if (!initialized) {
-            epsilon = testEpsilon;
-            learningRate = testLearningRate;
-            discountFactor = testDiscountFactor;
-            initialized = true;
-        }
-
-        // Przykładowe użycie zmiennej stateAgent3
-        discretizeStateAgent3(stateAgent3.state, stateAgent3.discreteState);
-        float action = chooseActionAgent3(stateAgent3.discreteState, testEpsilon);
-        executeActionAgent3(action);
-        float reward = calculateRewardAgent3(stateAgent3.state, action);
-        float nextState[2] = { 0.0, 0.0 }; // Przykładowe następne stany
-        updateQAgent3(stateAgent3.state, action, reward, nextState);
-    }
-
-
-    // Wywołania funkcji Q-learning dla agentów
-    qLearning(1, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-    qLearning(2, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-    qLearning(3, voltageIn[0], currentIn[0], efficiency, voltageDrop, externalVoltage, externalCurrent);
-
-    // Przykładowe wywołanie funkcji simulateVoltageControl
-    float Kp = 1.0, Ki = 0.5, Kd = 0.1;
-    float voltageError = simulateVoltageControl(Kp, Ki, Kd);
-    Serial.println(voltageError);
-
-    // Przykładowe wywołanie funkcji simulateExcitationControl
-    float excitationError = simulateExcitationControl();
-    Serial.println(excitationError);
-
-    // Przykładowe wywołanie funkcji someFunctionOfOtherParameters
-    float rotationalSpeed = 3000.0;
-    float torque = 50.0;
-    float frictionCoefficient = 0.8;
-    float brakingEffect = someFunctionOfOtherParameters(rotationalSpeed, torque, frictionCoefficient);
-    Serial.println(brakingEffect);
-
-    // Sprawdzenie, czy są dostępne dane do odczytu
-    if (mySerial.available()) {
-        String command = mySerial.readStringUntil('\n');
-        if (command == "START_COMPUTE") {
-            Serial.println("Rozpoczęcie obliczeń");
-            stopCompute = false; // Reset flagi przed rozpoczęciem obliczeń
-
-            while (true) {
-                // Wysłanie danych do komputera
-                mySerial.println("DANE_DO_PRZETWORZENIA");
-
-                // Oczekiwanie na potwierdzenie
-                while (!mySerial.available()) {
-                    // Czekanie na potwierdzenie
-                    if (stopCompute) {
-                        break;
-                    }
-                }
-
-                if (stopCompute) {
-                    break;
-                }
-
-                String ack = mySerial.readStringUntil('\n');
-                if (ack == "ACK") {
-                    Serial.println("Potwierdzenie odebrane");
-                }
-
-                // Warunek wyjścia z pętli
-                if (stopCompute) {
-                    break;
-                }
-            }
-        }
-    }
-}
-
-// Funkcja do trenowania agentów
-void trainAgents() {
-    trainAgent1();
-    trainAgent2();
-}
-
-// Funkcja do auto-strojenia PID
-void autoTunePID() {
-    PID pid(Kp, Ki, Kd);
-    autoTunePID(pid, VOLTAGE_SETPOINT, readVoltage());
-}
-
-// Funkcja do obsługi agenta 3
-void handleAgent3() {
-    float state[2] = { readVoltage(), readExcitationCurrent() };
-    int discreteState[2];
-    discretizeStateAgent3(state, discreteState);
-    float action = chooseActionAgent3(discreteState);
-    executeActionAgent3(action);
-    float reward = calculateRewardAgent3(state, action);
-    float nextState[2] = { readVoltage(), readExcitationCurrent() };
-    updateQAgent3(state, action, reward, nextState);
-}
-
-// Funkcja do regularnej optymalizacji PID
-void handlePIDOptimization() {
-    unsigned long currentTime = millis();
-    if (currentTime - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-        lastOptimizationTime = currentTime;
-        optimizer.optimize();
-        optimizer.getBestParams(params);
-        bestEfficiency = -optimizer.getBestObjective();
-        Kp = params[0];
-        Ki = params[1];
-        Kd = params[2];
-        printOptimizationResults();
-    }
-}
-
-// Funkcja do obsługi pętli z warunkiem wyjścia
-void handleLoopWithExitCondition() {
-    unsigned long startTime = millis();
-    while (true) {
-        int sensorValue = analogRead(A0);
-        Serial.println(sensorValue);
-        if (sensorValue > 100) {
-            break;
-        }
-        if (millis() - startTime > 1000) {
-            Serial.println("Pętla trwa zbyt długo, przerywanie...");
-            break;
-        }
-        delay(10);
-    }
-}
-
-// Funkcja do symulacji wydajności systemu
-void simulateSystemPerformance() {
-    float efficiency = simulateSystem(Kp, Ki, Kd);
-    Serial.println("Symulowana wydajność: " + String(efficiency));
-    delay(1000);
-}
-
-// Funkcja do aktualizacji potrzeb agentów
-void updateAgentNeeds() {
-    executeActionAgent(1, 0.5);
-    delay(300);
-    executeActionAgent(2, 0.75);
-    delay(300);
-    executeActionAgent(3, 1.0);
-    delay(300);
-}
-
-// Funkcja do wysyłania danych do komputera
-void sendDataToComputer() {
-    if (Serial) {
-        float dataToSend = analogRead(A0);
-        Serial.println(dataToSend);
-        delay(1000);
-    }
-}
-
-// Funkcja do aktualizacji priorytetów agentów
-void updateAgentPriorities() {
-    for (int i = 0; i < sizeof(agents) / sizeof(agents[0]); i++) {
-        increasePriority(agents[i]);
-    }
-}
-
-// Funkcja do przykładowej logiki sterowania
-void controlLogic() {
-    if (currentCurrent > LOAD_THRESHOLD) {
-        analogWrite(excitationBJT1Pin, 255);
-    }
-    else {
-        analogWrite(excitationBJT1Pin, 0);
-    }
-}
-
-// Funkcja do aktualizacji wartości napięcia i prądu
-void updateCurrentValues() {
-    currentVoltage = readVoltage();
-    currentCurrent = readExcitationCurrent();
-}
-
-
-// Stała konwersji napięcia
-const float VOLTAGE_CONVERSION_FACTOR = 5.0 / 1023.0;
-
-// Funkcja odczytu wartości z ADC i konwersji na odpowiednią jednostkę
-float readSensorValue(int pin) {
-    int rawValue = analogRead(pin);
-    return rawValue * VOLTAGE_CONVERSION_FACTOR;
-}
-
-// Funkcje odczytu poszczególnych wartości
-float readVoltage() {
-    return readSensorValue(A0);
-}
-
-float readExcitationCurrent() {
-    return readSensorValue(0);
-}
-
-float readBrakingEffect() {
-    return readSensorValue(0);
-}
-
-// Funkcja monitorująca błędy
-void monitorErrors() {
-    checkSensorValue("Voltage", readVoltage(), 220.0, 240.0);
-    checkSensorValue("Current", readExcitationCurrent(), 0.0, MAX_CURRENT);
-    checkSensorValue("Braking effect", readBrakingEffect(), 0.0, 100.0);
-}
-
-// Funkcja sprawdzająca wartość sensora i generująca odpowiednią naprawę
-void checkSensorValue(String sensorName, float value, float minValue, float maxValue) {
-    if (value < minValue || value > maxValue) {
-        generateAndImplementFix(sensorName + " out of range");
-    }
-}
-
-// Funkcja generująca i implementująca naprawę
-void generateAndImplementFix(String error) {
-    Serial.println("Error detected: " + error);
-    logError(error);
-    if (fixFunctions.find(error) != fixFunctions.end()) {
-        fixFunctions[error](); // Wywołanie odpowiedniej funkcji naprawczej
-    }
-    else {
-        defaultFixFunction(); // Wywołanie domyślnej funkcji naprawczej
-    }
-}
-
-// Funkcje naprawcze
-void resetVoltageController() {
-    Serial.println("Resetting voltage controller...");
-    // Kod resetowania kontrolera
-}
-
-void reduceExcitationCurrent() {
-    Serial.println("Reducing excitation current...");
-    // Kod zmniejszenia prądu wzbudzenia
-}
-
-void calibrateBrakingEffect() {
-    Serial.println("Calibrating braking effect...");
-    // Kod kalibracji efektu hamowania
-}
-
-// Funkcja logowania błędów do EEPROM
-void logError(String error) {
-    int addr = 0;
-    while (addr < 512) {
-        if (EEPROM.read(addr) == 0) {
-            if (addr + error.length() + 1 < 512) { // Sprawdzenie, czy jest wystarczająco dużo miejsca
-                for (int i = 0; i < error.length(); i++) {
-                    EEPROM.write(addr + i, error[i]);
-                }
-                EEPROM.write(addr + error.length(), 0); // Zakończenie stringa
-                EEPROM.commit();
-            }
-            break;
-        }
-        addr += error.length() + 1;
-    }
-}
-
-// Funkcja odczytu logów błędów z EEPROM
-void readErrorLog() {
-    int addr = 0;
-    while (addr < 512) {
-        char c = EEPROM.read(addr);
-        if (c == 0) break;
-        String error = "";
-        while (c != 0) {
-            error += c;
-            addr++;
-            c = EEPROM.read(addr);
-        }
-        Serial.println("Logged error: " + error);
-        addr++;
-    }
-}
-
-// Funkcja wykrywająca anomalie
-void detectAnomalies() {
-    float voltage = readVoltage();
-    float current = readExcitationCurrent();
-    float brakingEffect = readBrakingEffect();
-
-    // Wykorzystanie modelu uczenia maszynowego do przewidywania błędów
-    String predictedError = predictWithModel(voltage, current, brakingEffect);
-    if (predictedError != "") {
-        handleAnomaly(predictedError);
-    }
-}
-
-// Funkcja obsługi anomalii
-void handleAnomaly(String anomaly) {
-    Serial.println("Anomaly detected: " + anomaly);
-    logError(anomaly);
-    generateAndImplementFix(anomaly); // Wywołanie funkcji naprawczej dla anomalii
-}
-
-// Prosta logika przewidywania błędów
-String predictError(float voltage, float current, float brakingEffect) {
-    if (voltage < 220.0 || voltage > 240.0) {
-        return "Voltage out of range";
-    }
-    if (current > MAX_CURRENT) {
-        return "Current exceeds maximum limit";
-    }
-    if (brakingEffect < 0.0 || brakingEffect > 100.0) {
-        return "Braking effect out of range";
-    }
-    return "";
-}
-
-// Funkcja dodająca funkcję naprawczą do mapy
-void addFixFunction(String error, void(*fixFunction)()) {
-    fixFunctions[error] = fixFunction;
-}
-
-// Domyślna funkcja naprawcza
-void defaultFixFunction() {
-    Serial.println("No specific fix available. Executing default fix...");
-    // Kod domyślnej naprawy
-}
-
-
-void trainModel() {
-    // Przykładowe trenowanie modelu (w rzeczywistości powinno być bardziej zaawansowane)
-    modelWeights[0] = 1.2; // Waga dla napięcia
-    modelWeights[1] = 1.5; // Waga dla prądu
-    modelWeights[2] = 0.8; // Waga dla efektu hamowania
-    modelWeights[3] = 2.0; // Dodatkowa waga dla bardziej złożonego modelu
-}
-
-String predictWithModel(float voltage, float current, float brakingEffect) {
-    // Prosty model liniowy do przewidywania błędów
-    float score = modelWeights[0] * voltage + modelWeights[1] * current + modelWeights[2] * brakingEffect + modelWeights[3] * (voltage * current);
-    if (score > 1500) { // Zwiększony próg dla wykrywania większych anomalii
-        return "Anomaly detected by model";
-    }
-    return "";
-}
-
-void updateDisplay() {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 0);
-    display.println("System Status:");
-    display.println("Voltage: " + String(readVoltage()) + " V");
-    display.println("Current: " + String(readExcitationCurrent()) + " A");
-    display.println("Braking Effect: " + String(readBrakingEffect()));
-    display.display();
-}
-
-// Definicje funkcji zapisu i odczytu EEPROM
-void writeEEPROM(int address, byte value) {
-    if (xSemaphoreTake(eepromSemaphore, portMAX_DELAY) == pdTRUE) {
-        if (EEPROM.read(address) != value) {
-            EEPROM.write(address, value);
-            EEPROM.commit();
-        }
-        xSemaphoreGive(eepromSemaphore);
-    }
-}
-
-byte readEEPROM(int address) {
-    byte value = 0;
-    if (xSemaphoreTake(eepromSemaphore, portMAX_DELAY) == pdTRUE) {
-        value = EEPROM.read(address);
-        xSemaphoreGive(eepromSemaphore);
-    }
-    return value;
-}
-
-// Przykładowa funkcja użycia zapisu i odczytu EEPROM
-void exampleUsage() {
-    int address = 0; // Adres w EEPROM
-    byte valueToWrite = 42; // Wartość do zapisu
-
-    // Zapis wartości do EEPROM
-    writeEEPROM(address, valueToWrite);
-
-    // Odczyt wartości z EEPROM
-    byte readValue = readEEPROM(address);
-    Serial.print("Odczytana wartość: ");
-    Serial.println(readValue);
-}
-
-// Funkcja do obsługi opóźnień
-void delayWithMessage(unsigned long delayTime, const String & message) {
-    Serial.println(message);
-    delay(delayTime);
-}
-
-// Przykładowe użycie funkcji zapisu i odczytu EEPROM
-exampleUsage();
-delayWithMessage(1000, "Opóźnienie dla celów demonstracyjnych");
-}
-
-// Przykładowe zmienne
-static unsigned long previousMillis = 0;
-const long interval = 1000; // Interwał w milisekundach
-unsigned long currentMillis = millis();
-
-// Warunek sprawdzający, czy upłynął określony czas
-if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
-
-    // Operacje, które mają być wykonywane co określony interwał czasu
-    float voltage = readVoltage();
-    float current = readExcitationCurrent();
-    float brakingEffect = readBrakingEffect();
-
-    // Przykładowe obliczenia
-    float error = calculateError(voltage, current, brakingEffect);
-
-    // Aktualizacja zmiennych tylko wtedy, gdy jest to konieczne
-    if (error > TOLERANCE) {
-        // Wykonaj operacje tylko wtedy, gdy błąd przekracza margines tolerancji
-        updateControlParameters(error);
-    }
-}
-
-// Inne operacje, które mogą być wykonywane w pętli loop
-handleSerialCommunication();
-updateDisplay();
-
-// Przykładowa funkcja obliczająca błąd
-float calculateError(float voltage, float current, float brakingEffect) {
-    // Przykładowe obliczenia błędu
-    return abs(voltage - current - brakingEffect);
-}
-
-// Przykładowa funkcja aktualizująca parametry sterowania
-void updateControlParameters(float error) {
-   
-    // Przykładowa aktualizacja parametrów sterowania
-    float newKp = Kp + error * 0.1;
-    float newKi = Ki + error * 0.01;
-    float newKd = Kd + error * 0.001;
-    pid.setTunings(newKp, newKi, newKd);
-}
-
-// Przykładowa funkcja obsługująca komunikację szeregową
-void handleSerialCommunication() {
-    if (Serial.available() > 0) {
-        String input = Serial.readString();
-        Serial.println("Received: " + input);
-    }
-}
-
-// Wywołanie funkcji hillClimbing
-float currentThreshold = 0.5; // Przykładowa wartość początkowa
-float stepSize = 0.1; // Przykładowy rozmiar kroku
-float optimizedThreshold = hillClimbing(currentThreshold, stepSize);
-
-// Obliczanie efektywności i innych parametrów na podstawie aktualnych danych z sensorów
-efficiency = calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-efficiencyPercent = efficiency * 100.0;
-voltageDrop = voltageIn[1] - voltageIn[0];
-
-// Bayesian optimization (at a certain interval)
-if (millis() - lastOptimizationTime > OPTIMIZATION_INTERVAL) {
-    lastOptimizationTime = millis();
-
-    float newParams[3];
-    optimizer.suggestNextParameters(newParams);
-    params[0] = newParams[0];
-    params[1] = newParams[1];
-    params[2] = newParams[2];
-
-    float totalEfficiency = 0;
-    unsigned long startTime = millis();
-    while (millis() - startTime < TEST_DURATION) {
-        totalEfficiency += calculateEfficiency(voltageIn[0], currentIn[0], externalVoltage, externalCurrent);
-    }
-    float averageEfficiency = totalEfficiency / (TEST_DURATION / 100);
-
-    optimizer.update(newParams, averageEfficiency);
-
-    if (averageEfficiency > bestEfficiency) {
-        bestEfficiency = averageEfficiency;
-        memcpy(params, newParams, sizeof(params));
-
-        // Stała dla adresu początku tablicy Q
-        const int Q_TABLE_START_ADDRESS = sizeof(lastOptimizationTime);
-
-        // Zapisujemy czas ostatniej optymalizacji
-        EEPROM.put(0, lastOptimizationTime);
-
-        // Zapisujemy tablicę Q-learning, sprawdzając każdy bajt
-        int qTableSize = sizeof(qTable);
-        for (int i = 0; i < qTableSize; i++) {
-            EEPROM.update(i + Q_TABLE_START_ADDRESS, ((byte*)qTable)[i]);
-        }
-
-        // Zatwierdzamy zmiany w EEPROM
-        if (!EEPROM.commit()) {
-            Serial.println("Error committing changes to EEPROM!");
-            return; // Przerywamy dalsze wykonywanie w przypadku błędu
-        }
-
-        Serial.println("Saved Q-learning table and lastOptimizationTime to EEPROM.");
-    }
-}
-
-// Aktualizacja agentów
-void updateAgents(unsigned long currentTime, unsigned long& lastUpdate, void (*qLearningAgent)(float, float, float, float, float)) {
-    if (currentTime - lastUpdate >= updateInterval) {
-        float error = VOLTAGE_SETPOINT - currentVoltage;
-        float load = currentCurrent;
-        qLearningAgent(error, load, Kp, Ki, Kd);
-        lastUpdate = currentTime;
-    }
-}
-
-// Definicja i inicjalizacja zmiennej currentTime
-unsigned long currentTime = millis();
-int currentTime;
-
-updateAgents(currentTime, lastUpdateAgent1, qLearningAgent1);
-updateAgents(currentTime, lastUpdateAgent2, qLearningAgent2);
-updateAgents(currentTime, lastUpdateAgent3, qLearningAgent3);
-
-
-// Hill Climbing optimization of excitation phase switching threshold
-LOAD_THRESHOLD = hillClimbing(LOAD_THRESHOLD, 0.01, evaluateThreshold);
-Serial.print("Updated excitation phase switching threshold: ");
-Serial.println(LOAD_THRESHOLD);
-
-// Display data on the screen
-displayData(efficiencyPercent);
-
-// Adjust control frequency
-adjustControlFrequency();
-
-// Monitor transistors
-monitorTransistors();
-
-// Monitor performance and adjust control
-monitorPerformanceAndAdjust();
-
-// Communication with the computer
-if (Serial.available() > 0) {
-    efficiency = Serial.parseFloat();
-    efficiencyPercent = efficiency * 100.0;
-    voltageDrop = Serial.parseFloat();
-}
-
-
-advancedLogData(efficiencyPercent); // Wywołanie funkcji advancedLogData
-delay(1000); // Przykładowe opóźnienie, aby nie logować zbyt często
-
-checkAlarm();
-autoCalibrate();
-energyManagement();
-
-// Q-learning (voltage stabilizer, excitation coils, generator braking)
-void qLearning(int agent, float voltage, float current, float efficiency, float voltageDrop, float externalVoltage, float externalCurrent) {
-    int state, action, nextState;
-    float reward, power_output;
-
-    void discretizeState(float voltageError, float current, float Kp, float Ki, float Kd, float state[5]) {
-        // Przykładowa implementacja dyskretyzacji stanu
-        state[0] = voltageError;
-        state[1] = current;
-        state[2] = Kp;
-        state[3] = Ki;
-        state[4] = Kd;
-    }
-
-    int chooseAction(float state[5]) {
-        // Przykładowa implementacja wyboru akcji
-        return 0; // Zwraca przykładową akcję
-    }
-
-    void executeAction(int action) {
-        // Przykładowa implementacja wykonania akcji
-    }
-
-    float calculateReward(float voltageError, float efficiency, float voltageDrop) {
-        // Przykładowa implementacja obliczania nagrody
-        return 0.0; // Zwraca przykładową nagrodę
-    }
-
-    void updateQ(float state[5], int action, float reward, float nextState[5]) {
-        // Przykładowa implementacja aktualizacji Q
-    }
-
-    void discretizeStateAgent3(float voltageError, float current, float state[2]) {
-        // Przykładowa implementacja dyskretyzacji stanu dla agenta 3
-        state[0] = voltageError;
-        state[1] = current;
-    }
-
-    int chooseActionAgent3(float state[2]) {
-        // Przykładowa implementacja wyboru akcji dla agenta 3
-        return 0; // Zwraca przykładową akcję
-    }
-
-    void executeActionAgent3(int action) {
-        // Przykładowa implementacja wykonania akcji dla agenta 3
-    }
-
-    float calculateRewardAgent3(float efficiency, float voltage, float voltageDrop, float powerOutput) {
-        // Przykładowa implementacja obliczania nagrody dla agenta 3
-        return 0.0; // Zwraca przykładową nagrodę
-    }
-
-    void updateQAgent3(float state[2], int action, float reward, float nextState[2]) {
-        // Przykładowa implementacja aktualizacji Q dla agenta 3
-    }
-
-    if (agent == 1 || agent == 2) {
-        float state[5]; // Zakładam, że stan ma 5 elementów, dostosuj w razie potrzeby
-        float nextState[5];
-        discretizeState(VOLTAGE_SETPOINT - voltage, current, Kp, Ki, Kd, state);
-        int action = chooseAction(state);
-        executeAction(action);
-        float reward = calculateReward(VOLTAGE_SETPOINT - voltage, efficiency, voltageDrop);
-        discretizeState(VOLTAGE_SETPOINT - voltage, current, Kp, Ki, Kd, nextState);
-        updateQ(state, action, reward, nextState);
-    }
-    else if (agent == 3) {
-        float state[2]; // Zakładam, że stan ma 2 elementy, dostosuj w razie potrzeby
-        float nextState[2];
-        float power_output = externalVoltage * externalCurrent; // Obliczamy moc wyjściową generatora
-        discretizeStateAgent3(VOLTAGE_SETPOINT - voltage, current, state);
-        int action = chooseActionAgent3(state);
-        executeActionAgent3(action);
-        float reward = calculateRewardAgent3(efficiency, voltage, voltageDrop, power_output);
-        discretizeStateAgent3(VOLTAGE_SETPOINT - voltage, current, nextState);
-        updateQAgent3(state, action, reward, nextState);
-    }
-
-
-
-
-// Implementacja funkcji centralController
-void centralController() {
-    float averageTargetVoltage = 0.0;
-    int numAgents = sizeof(agents) / sizeof(agents[0]);
-
-    for (int i = 0; i < numAgents; i++) {
-        averageTargetVoltage += agents[i].targetVoltage;
-    }
-    averageTargetVoltage /= numAgents;
-
-    setTargetVoltageForAllAgents(averageTargetVoltage);
-
-    // Dostosuj minimalny próg mocy wejściowej - dodane tutaj
-    float inputPower = voltageIn[0] * currentIn[0];
-    adjustMinInputPower(inputPower);
-}
-
-// Obsługa serwera
-server.handleClient();
-
-// Obsługa komend szeregowych
-handleSerialCommands();
-
-// Trening agenta 1
-trainAgent1();
-
-// Funkcja monitorująca tranzystory
-void monitorTransistors() {
-    const int tranzystorPins[3] = { bjtPin1, bjtPin2, bjtPin3 };
-    for (int i = 0; i < 3; i++) {
-        int state = digitalRead(tranzystorPins[i]);
-        if (state == LOW) {
-            Serial.print("Tranzystor ");
-            Serial.print(i + 1); // Dodajemy 1, aby numeracja była od 1
-            Serial.println(" jest wyłączony.");
-        }
-        else {
-            Serial.print("Tranzystor ");
-            Serial.print(i + 1); // Dodajemy 1, aby numeracja była od 1
-            Serial.println(" jest włączony.");
-        }
-    }
-}
-
-
-
-void detectComputerConnection() {
-    if (Serial.available()) {
-        Serial.println("Komputer podłączony. Przenoszenie mocy obliczeniowej...");
-        // Wyślij komendę do komputera, aby rozpocząć przenoszenie mocy obliczeniowej
-        Serial.println("START_COMPUTE");
-    }
-}
-
-
